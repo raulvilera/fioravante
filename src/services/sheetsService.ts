@@ -130,7 +130,6 @@ export const importStudentsFromSheetsToSupabase = async (): Promise<ImportResult
       ra: (s.ra || '').trim(),
       turma: s.turma,
       escola: 'fioravante',
-      synced_at: new Date().toISOString(),
     }));
 
     const { error } = await supabase.from('students').insert(rows);
