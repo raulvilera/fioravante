@@ -79,13 +79,14 @@ interface DashboardProps {
   onOpenSearch: () => void;
   onUpdateIncident?: (incident: Incident) => void;
   onSyncStudents?: () => Promise<void>;
+  onImportIncidents?: () => Promise<void>;
   onLoadFullStudentHistory?: (ra: string) => Promise<Incident[]>;
   onLoadArchivedIncidents?: (filters?: { studentName?: string; classRoom?: string }) => Promise<Incident[]>;
   onToggleView?: () => void;
   viewMode?: 'gestor' | 'professor';
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classes, onSave, onDelete, onLogout, onOpenSearch, onUpdateIncident, onSyncStudents, onLoadFullStudentHistory, onLoadArchivedIncidents, onToggleView, viewMode }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classes, onSave, onDelete, onLogout, onOpenSearch, onUpdateIncident, onSyncStudents, onImportIncidents, onLoadFullStudentHistory, onLoadArchivedIncidents, onToggleView, viewMode }) => {
   const [classRoom, setClassRoom] = useState('');
   const [studentName, setStudentName] = useState('');
   const [professorName, setProfessorName] = useState('');
@@ -620,6 +621,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               Sincronizar Alunos
+            </button>
+          )}
+          {onImportIncidents && (
+            <button
+              onClick={onImportIncidents}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 sm:py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase shadow-lg transition-all active:scale-95 flex items-center gap-2"
+              title="Importar ocorrências históricas do Google Sheets para o Supabase"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Importar Histórico
             </button>
           )}
           {onLoadArchivedIncidents && (
