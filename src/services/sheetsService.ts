@@ -94,13 +94,13 @@ export const importStudentsFromSheetsToSupabase = async (): Promise<ImportResult
     return result;
   }
 
-  // 3. Apagar registros synced anteriores
-  console.log('🗑️ Removendo sincronizações antigas do Supabase...');
+  // 3. Apagar TODOS os registros da escola antes de reinserir
+  console.log('🗑️ Removendo registros antigos do Supabase...');
   const { error: deleteError } = await supabase
     .from('students')
     .delete()
-    .like('id', 'synced-%')
-    .eq('escola', 'fioravante');
+    .eq('escola', 'fioravante')
+    .like('id', 'synced-%');
 
   if (deleteError) {
     result.errors.push(`Aviso: falha ao limpar registros antigos — ${deleteError.message}`);
@@ -132,7 +132,7 @@ export const importStudentsFromSheetsToSupabase = async (): Promise<ImportResult
       escola: 'fioravante',
     }));
 
-    const { error } = await supabase.from('students').insert(rows);
+    const { error } = await supabase.from('students').upsert(rows, { onConflict: 'id', ignoreDuplicates: true });
     if (error) {
       const msg = `Erro no lote ${Math.floor(i / CHUNK_SIZE) + 1}: ${error.message}`;
       console.error('❌', msg);
