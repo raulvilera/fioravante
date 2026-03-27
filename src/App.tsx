@@ -5,7 +5,7 @@ import ProfessorView, { SearchModal } from './components/ProfessorView';
 import ResetPassword from './components/ResetPassword';
 import { Incident, User, Student } from './types';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
-import { saveToGoogleSheets, loadStudentsFromSheets } from './services/sheetsService';
+import { saveToGoogleSheets, loadStudentsFromSheets, importStudentsFromSheetsToSupabase } from './services/sheetsService';
 import { getRoleFromLocalDB, PROFESSORS_DB } from './data/professorsData';
 import { STUDENTS_DB } from './data/studentsData';
 import { normalizeClassName } from './utils/formatters';
@@ -451,12 +451,26 @@ const App = () => {
   const handleSyncStudents = async () => {
     setLoading(true);
     try {
-      // Re-executa loadStudentsData com força de sincronização
-      const loadFn = (window as any).refreshStudents;
-      if (loadFn) await loadFn(true);
-      alert("Sincronização com Google Sheets concluída com sucesso!");
+      const result = await importStudentsFromSheetsToSupabase();
+      if (result.success) {
+        alert(
+          `✅ Sincronização concluída!\n\n` +
+          `• Total na planilha: ${result.total} alunos\n` +
+          `• Inseridos no Supabase: ${result.inserted}\n` +
+          `• Duplicatas ignoradas: ${result.skipped}` +
+          (result.errors.length ? `\n\n⚠️ Avisos:\n${result.errors.join('\n')}` : '')
+        );
+        // Recarrega a lista de alunos do Supabase após a importação
+        const loadFn = (window as any).refreshStudents;
+        if (loadFn) await loadFn(false);
+      } else {
+        alert(
+          `❌ Falha na sincronização.\n\n` +
+          (result.errors.length ? result.errors.join('\n') : 'Erro desconhecido.')
+        );
+      }
     } catch (err) {
-      alert("Erro ao sincronizar alunos.");
+      alert(`Erro inesperado ao sincronizar alunos:\n${String(err)}`);
     } finally {
       setLoading(false);
     }
