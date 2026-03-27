@@ -6,7 +6,6 @@ import ResetPassword from './components/ResetPassword';
 import { Incident, User, Student } from './types';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { saveToGoogleSheets, loadStudentsFromSheets, importStudentsFromSheetsToSupabase } from './services/sheetsService';
-import { importIncidentsFromSheets } from './services/importIncidentsService';
 import { getRoleFromLocalDB, PROFESSORS_DB } from './data/professorsData';
 import { STUDENTS_DB } from './data/studentsData';
 import { normalizeClassName } from './utils/formatters';
@@ -475,6 +474,75 @@ const App = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+
+  // ── Importar ocorrências históricas do Google Sheets ──────────────────────
+  const importIncidentsFromSheets = async () => {
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyZwPftxQz4_Xi__K1_LKTeQFcN0kPmGQ9kOo-xLu6G2Go2BBExa5pc1FLogx9_oPLU4w/exec';
+    const SHEET_ID = '1I2e7NexDqkZZ6Pc6fEQ6QTJCdY2xGgo_SicORFv4zGI';
+
+    const makeId = (prefix: string, date: string, name: string, idx: number) =>
+      `imported-${prefix}-${(date || '').replace(/\//g, '')}-${(name || '').slice(0, 8).replace(/\s/g, '')}-${idx}`;
+
+    const fetchSheet = async (sheetName: string): Promise<any[][]> => {
+      const url = `${GOOGLE_SCRIPT_URL}?action=getSheet&spreadsheetId=${SHEET_ID}&sheetName=${encodeURIComponent(sheetName)}`;
+      const response = await fetch(url, { method: 'GET', cache: 'no-cache' });
+      if (!response.ok) throw new Error(`Erro HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.success && Array.isArray(data.rows)) return data.rows;
+      throw new Error(`Resposta inválida para ${sheetName}`);
+    };
+
+    const rows: any[] = [];
+    let totalProfessor = 0, totalGestao = 0;
+    const errors: string[] = [];
+
+    try {
+      const profRows = await fetchSheet('OCORRENCIASDOSPROFESSORES');
+      const dataRows = profRows.filter((r, i) => i > 0 && r[0] && r[0] !== 'DATA');
+      totalProfessor = dataRows.length;
+      dataRows.forEach((r, idx) => rows.push({
+        id: makeId('prof', r[0], r[3], idx),
+        escola: 'fioravante', date: r[0] || '',
+        professor_name: (r[1] || '').toUpperCase(), class_room: r[2] || '',
+        student_name: (r[3] || '').toUpperCase(), ra: r[4] || '',
+        discipline: (r[5] || '').toUpperCase(), irregularities: (r[6] || '').toUpperCase(),
+        description: (r[7] || '').toUpperCase(), time: r[9] || '',
+        pdf_url: null, source: 'professor', status: 'Resolvida', severity: 'Baixa',
+        category: 'OCORRÊNCIA', author_email: '',
+      }));
+    } catch (err) { errors.push(`Erro ao ler OCORRENCIASDOSPROFESSORES: ${String(err)}`); }
+
+    try {
+      const gestaoRows = await fetchSheet('BANCODEALUNOS');
+      const dataRows = gestaoRows.filter((r, i) => i > 0 && r[0] && r[0] !== 'DATA');
+      totalGestao = dataRows.length;
+      dataRows.forEach((r, idx) => rows.push({
+        id: makeId('gest', r[0], r[1], idx),
+        escola: 'fioravante', date: r[0] || '',
+        student_name: (r[1] || '').toUpperCase(), class_room: r[2] || '',
+        professor_name: (r[3] || '').toUpperCase(), ra: r[4] || '',
+        category: (r[5] || 'OCORRÊNCIA').toUpperCase(), description: (r[6] || '').toUpperCase(),
+        register_date: r[8] || r[0] || '', return_date: r[9] || '',
+        pdf_url: null, source: 'gestao', status: 'Resolvida', severity: 'Baixa',
+        discipline: '', irregularities: '', time: '', author_email: '',
+      }));
+    } catch (err) { errors.push(`Erro ao ler BANCODEALUNOS: ${String(err)}`); }
+
+    if (rows.length === 0) return { success: false, totalProfessor, totalGestao, inserted: 0, errors };
+
+    await supabase.from('incidents').delete().like('id', 'imported-%').eq('escola', 'fioravante');
+
+    let inserted = 0;
+    const CHUNK_SIZE = 200;
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      const { error } = await supabase.from('incidents').upsert(rows.slice(i, i + CHUNK_SIZE), { onConflict: 'id' });
+      if (error) errors.push(`Erro no lote ${Math.floor(i / CHUNK_SIZE) + 1}: ${error.message}`);
+      else inserted += rows.slice(i, i + CHUNK_SIZE).length;
+    }
+
+    return { success: inserted > 0, totalProfessor, totalGestao, inserted, errors };
   };
 
   const handleImportIncidents = async () => {
