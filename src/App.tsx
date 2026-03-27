@@ -6,6 +6,7 @@ import ResetPassword from './components/ResetPassword';
 import { Incident, User, Student } from './types';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { saveToGoogleSheets, loadStudentsFromSheets, importStudentsFromSheetsToSupabase } from './services/sheetsService';
+import { importIncidentsFromSheets } from './services/importIncidentsService';
 import { getRoleFromLocalDB, PROFESSORS_DB } from './data/professorsData';
 import { STUDENTS_DB } from './data/studentsData';
 import { normalizeClassName } from './utils/formatters';
@@ -476,6 +477,29 @@ const App = () => {
     }
   };
 
+  const handleImportIncidents = async () => {
+    setLoading(true);
+    try {
+      const result = await importIncidentsFromSheets();
+      if (result.success) {
+        alert(
+          `✅ Importação concluída!\n\n` +
+          `• Ocorrências de professores: ${result.totalProfessor}\n` +
+          `• Ocorrências da gestão: ${result.totalGestao}\n` +
+          `• Inseridas no Supabase: ${result.inserted}` +
+          (result.errors.length ? `\n\n⚠️ Avisos:\n${result.errors.join('\n')}` : '')
+        );
+        await loadCloudIncidents();
+      } else {
+        alert(`❌ Falha na importação.\n\n` + (result.errors.length ? result.errors.join('\n') : 'Erro desconhecido.'));
+      }
+    } catch (err) {
+      alert(`Erro inesperado:\n${String(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (user) loadCloudIncidents();
   }, [user]);
@@ -885,6 +909,7 @@ const App = () => {
     onLogout: handleLogout,
     onOpenSearch: () => setSearchModalOpen(true),
     onSyncStudents: handleSyncStudents,
+    onImportIncidents: handleImportIncidents,
     onLoadFullStudentHistory: loadFullStudentHistory,
     onLoadArchivedIncidents: loadArchivedIncidents,
     onToggleView: hasDualAccess ? handleToggleView : undefined,
