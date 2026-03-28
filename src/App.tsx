@@ -542,8 +542,6 @@ const App = () => {
 
     if (rows.length === 0) return { success: false, totalProfessor, totalGestao, inserted: 0, errors };
 
-    await supabase.from('incidents').delete().like('id', 'imported-%').eq('escola', 'fioravante');
-
     let inserted = 0;
     const CHUNK_SIZE = 200;
     for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
