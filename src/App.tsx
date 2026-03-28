@@ -484,22 +484,14 @@ const App = () => {
     const makeId = (prefix: string, date: string, name: string, idx: number) =>
       `imported-${prefix}-${(date || '').replace(/\//g, '')}-${(name || '').slice(0, 8).replace(/\s/g, '')}-${idx}`;
 
-    // Usa o mesmo padrão do loadStudentsFromSheets — parâmetros sheetName + escola
-    const fetchSheet = async (sheetName: string): Promise<any[][]> => {
+    // Script retorna objetos com campos nomeados em data.rows
+    const fetchSheetRows = async (sheetName: string): Promise<any[]> => {
       const url = `${GOOGLE_SCRIPT_URL}?sheetName=${encodeURIComponent(sheetName)}&escola=fioravante`;
       const response = await fetch(url, { method: 'GET', cache: 'no-cache' });
       if (!response.ok) throw new Error(`Erro HTTP ${response.status}`);
       const data = await response.json();
-      // Aceita tanto { rows: [] } quanto { incidents: [] } quanto array direto
-      if (data.success) {
-        if (Array.isArray(data.rows)) return data.rows;
-        if (Array.isArray(data.incidents)) return data.incidents;
-        if (Array.isArray(data.records)) return data.records;
-        // Se retornar objetos com campos, converte para array de arrays
-        const anyArray = data.data || data.values || data.entries;
-        if (Array.isArray(anyArray)) return anyArray;
-      }
-      throw new Error(`Resposta inválida para ${sheetName}`);
+      if (data.success && Array.isArray(data.rows)) return data.rows;
+      throw new Error(data.error || `Resposta inválida para ${sheetName}`);
     };
 
     const rows: any[] = [];
@@ -507,33 +499,43 @@ const App = () => {
     const errors: string[] = [];
 
     try {
-      const profRows = await fetchSheet('OCORRENCIASDOSPROFESSORES');
-      const dataRows = profRows.filter((r, i) => i > 0 && r[0] && r[0] !== 'DATA');
-      totalProfessor = dataRows.length;
-      dataRows.forEach((r, idx) => rows.push({
-        id: makeId('prof', r[0], r[3], idx),
-        escola: 'fioravante', date: r[0] || '',
-        professor_name: (r[1] || '').toUpperCase(), class_room: r[2] || '',
-        student_name: (r[3] || '').toUpperCase(), ra: r[4] || '',
-        discipline: (r[5] || '').toUpperCase(), irregularities: (r[6] || '').toUpperCase(),
-        description: (r[7] || '').toUpperCase(), time: r[9] || '',
-        pdf_url: null, source: 'professor', status: 'Resolvida', severity: 'Baixa',
+      const profRows = await fetchSheetRows('OCORRENCIASDOSPROFESSORES');
+      totalProfessor = profRows.length;
+      profRows.forEach((r, idx) => rows.push({
+        id: makeId('prof', r.date, r.student_name, idx),
+        escola: 'fioravante',
+        date: r.date || '',
+        professor_name: (r.professor_name || '').toUpperCase(),
+        class_room: r.class_room || '',
+        student_name: (r.student_name || '').toUpperCase(),
+        ra: r.ra || '',
+        discipline: (r.discipline || '').toUpperCase(),
+        irregularities: (r.irregularities || '').toUpperCase(),
+        description: (r.description || '').toUpperCase(),
+        time: r.time || '',
+        pdf_url: r.pdf_url || null,
+        source: 'professor', status: 'Resolvida', severity: 'Baixa',
         category: 'OCORRÊNCIA', author_email: '',
       }));
     } catch (err) { errors.push(`Erro ao ler OCORRENCIASDOSPROFESSORES: ${String(err)}`); }
 
     try {
-      const gestaoRows = await fetchSheet('BANCODEALUNOS');
-      const dataRows = gestaoRows.filter((r, i) => i > 0 && r[0] && r[0] !== 'DATA');
-      totalGestao = dataRows.length;
-      dataRows.forEach((r, idx) => rows.push({
-        id: makeId('gest', r[0], r[1], idx),
-        escola: 'fioravante', date: r[0] || '',
-        student_name: (r[1] || '').toUpperCase(), class_room: r[2] || '',
-        professor_name: (r[3] || '').toUpperCase(), ra: r[4] || '',
-        category: (r[5] || 'OCORRÊNCIA').toUpperCase(), description: (r[6] || '').toUpperCase(),
-        register_date: r[8] || r[0] || '', return_date: r[9] || '',
-        pdf_url: null, source: 'gestao', status: 'Resolvida', severity: 'Baixa',
+      const gestaoRows = await fetchSheetRows('BANCODEALUNOS');
+      totalGestao = gestaoRows.length;
+      gestaoRows.forEach((r, idx) => rows.push({
+        id: makeId('gest', r.date, r.student_name, idx),
+        escola: 'fioravante',
+        date: r.date || '',
+        student_name: (r.student_name || '').toUpperCase(),
+        class_room: r.class_room || '',
+        professor_name: (r.professor_name || '').toUpperCase(),
+        ra: r.ra || '',
+        category: (r.category || 'OCORRÊNCIA').toUpperCase(),
+        description: (r.description || '').toUpperCase(),
+        register_date: r.register_date || r.date || '',
+        return_date: r.return_date || '',
+        pdf_url: r.pdf_url || null,
+        source: 'gestao', status: 'Resolvida', severity: 'Baixa',
         discipline: '', irregularities: '', time: '', author_email: '',
       }));
     } catch (err) { errors.push(`Erro ao ler BANCODEALUNOS: ${String(err)}`); }
