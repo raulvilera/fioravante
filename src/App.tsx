@@ -480,17 +480,25 @@ const App = () => {
   // ── Importar ocorrências históricas do Google Sheets ──────────────────────
   const importIncidentsFromSheets = async () => {
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyZwPftxQz4_Xi__K1_LKTeQFcN0kPmGQ9kOo-xLu6G2Go2BBExa5pc1FLogx9_oPLU4w/exec';
-    const SHEET_ID = '1I2e7NexDqkZZ6Pc6fEQ6QTJCdY2xGgo_SicORFv4zGI';
 
     const makeId = (prefix: string, date: string, name: string, idx: number) =>
       `imported-${prefix}-${(date || '').replace(/\//g, '')}-${(name || '').slice(0, 8).replace(/\s/g, '')}-${idx}`;
 
+    // Usa o mesmo padrão do loadStudentsFromSheets — parâmetros sheetName + escola
     const fetchSheet = async (sheetName: string): Promise<any[][]> => {
-      const url = `${GOOGLE_SCRIPT_URL}?action=getSheet&spreadsheetId=${SHEET_ID}&sheetName=${encodeURIComponent(sheetName)}`;
+      const url = `${GOOGLE_SCRIPT_URL}?sheetName=${encodeURIComponent(sheetName)}&escola=fioravante`;
       const response = await fetch(url, { method: 'GET', cache: 'no-cache' });
       if (!response.ok) throw new Error(`Erro HTTP ${response.status}`);
       const data = await response.json();
-      if (data.success && Array.isArray(data.rows)) return data.rows;
+      // Aceita tanto { rows: [] } quanto { incidents: [] } quanto array direto
+      if (data.success) {
+        if (Array.isArray(data.rows)) return data.rows;
+        if (Array.isArray(data.incidents)) return data.incidents;
+        if (Array.isArray(data.records)) return data.records;
+        // Se retornar objetos com campos, converte para array de arrays
+        const anyArray = data.data || data.values || data.entries;
+        if (Array.isArray(anyArray)) return anyArray;
+      }
       throw new Error(`Resposta inválida para ${sheetName}`);
     };
 
