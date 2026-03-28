@@ -407,8 +407,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         <div className="mb-4 mt-2 relative">
           <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full"></div>
-          <div className="relative z-10 w-20 h-20 bg-gradient-to-tr from-blue-700 to-teal-400 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 drop-shadow-2xl border border-white/20">
-            <GraduationCap className="text-white w-12 h-12 -rotate-3" />
+          <div className="relative z-10 w-20 h-20 bg-gradient-to-tr from-blue-700 to-teal-400 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 drop-shadow-2xl border border-white/20 overflow-hidden">
+            <img src="/logo.png" alt="Logo EE Fioravante Iervolino" className="w-full h-full object-contain p-1 -rotate-3" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
           </div>
         </div>
 
