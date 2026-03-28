@@ -25,6 +25,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -338,7 +340,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         throw new Error('ERRO AO PROCESSAR SOLICITAÇÃO. VERIFIQUE A CONFIGURAÇÃO SMTP NO SUPABASE OU TENTE NOVAMENTE.');
       }
 
-      setMessage('✨ SOLICITAÇÃO ENVIADA! VERIFIQUE SUA CAIXA DE ENTRADA (E SPAM) PARA AS INSTRUÇÕES.');
+      setResetEmailSent(lowerEmail);
+      setShowResetModal(true);
       console.log('✅ [RESET] Solicitação processada para:', lowerEmail);
 
     } catch (err: any) {
