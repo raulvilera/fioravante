@@ -19,6 +19,7 @@ export const FIXED_GESTAO_EMAILS = [
     'patricia.alexandre1@servidor.educacao.sp.gov.br',
     'sueli.silva9@educacao.sp.gov.br',
     'sueli.silva9@servidor.educacao.sp.gov.br',
+    'patriciavilera@gmail.com',
 ];
 
 /**
@@ -33,6 +34,7 @@ export const DUAL_ACCESS_EMAILS = [
     'patricia.alexandre1@servidor.educacao.sp.gov.br',
     'sueli.silva9@educacao.sp.gov.br',
     'sueli.silva9@servidor.educacao.sp.gov.br',
+    'patriciavilera@gmail.com',
 ];
 
 export const PROFESSORS_DB: ProfessorData[] = [
@@ -45,6 +47,7 @@ export const PROFESSORS_DB: ProfessorData[] = [
     { email: 'patricia.alexandre1@educacao.sp.gov.br',         nome: 'PATRICIA DE OLIVEIRA ALEXANDRE VILERA - GESTÃO' },
     { email: 'patricia.alexandre1@servidor.educacao.sp.gov.br',nome: 'PATRICIA DE OLIVEIRA ALEXANDRE VILERA - GESTÃO' },
     { email: 'sueli.silva9@educacao.sp.gov.br',                nome: 'SUELI CORREIA DA SILVA - GESTÃO' },
+    { email: 'patriciavilera@gmail.com',                        nome: 'PATRICIA VILERA - GESTÃO' },
     { email: 'sueli.silva9@servidor.educacao.sp.gov.br',       nome: 'SUELI CORREIA DA SILVA - GESTÃO' },
 
     // ── Professores Fioravante ────────────────────────────────────────────────
