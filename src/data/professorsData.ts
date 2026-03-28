@@ -12,9 +12,13 @@ export interface ProfessorData {
 export const FIXED_GESTAO_EMAILS = [
     'gestao@escola.com',
     'vilera@prof.educacao.sp.gov.br',
-    'patriciavilera@gmail.com',
-    'patriciavilera@gmai.com',
-    'sueli.silva9@educacao.sp.gov.br'
+    'vilera@professor.educacao.sp.gov.br',
+    'marcia.coelho@educacao.sp.gov.br',
+    'marcia.coelho@servidor.educacao.sp.gov.br',
+    'patricia.alexandre1@educacao.sp.gov.br',
+    'patricia.alexandre1@servidor.educacao.sp.gov.br',
+    'sueli.silva9@educacao.sp.gov.br',
+    'sueli.silva9@servidor.educacao.sp.gov.br',
 ];
 
 /**
@@ -22,17 +26,26 @@ export const FIXED_GESTAO_EMAILS = [
  */
 export const DUAL_ACCESS_EMAILS = [
     'vilera@prof.educacao.sp.gov.br',
-    'patriciavilera@gmail.com',
-    'patriciavilera@gmai.com',
-    'sueli.silva9@educacao.sp.gov.br'
+    'vilera@professor.educacao.sp.gov.br',
+    'marcia.coelho@educacao.sp.gov.br',
+    'marcia.coelho@servidor.educacao.sp.gov.br',
+    'patricia.alexandre1@educacao.sp.gov.br',
+    'patricia.alexandre1@servidor.educacao.sp.gov.br',
+    'sueli.silva9@educacao.sp.gov.br',
+    'sueli.silva9@servidor.educacao.sp.gov.br',
 ];
 
 export const PROFESSORS_DB: ProfessorData[] = [
     // ── Gestão Fioravante ─────────────────────────────────────────────────────
     { email: 'gestao@escola.com',                              nome: 'GESTÃO ESCOLAR' },
     { email: 'vilera@prof.educacao.sp.gov.br',                 nome: 'RAUL VILERA - GESTÃO' },
-    { email: 'patriciavilera@gmail.com',                       nome: 'PATRICIA VILERA - GESTÃO' },
-    { email: 'patriciavilera@gmai.com',                        nome: 'PATRICIA VILERA - GESTÃO' },
+    { email: 'vilera@professor.educacao.sp.gov.br',            nome: 'RAUL VILERA - GESTÃO' },
+    { email: 'marcia.coelho@educacao.sp.gov.br',               nome: 'MARCIA REGINA PEREIRA COELHO - GESTÃO' },
+    { email: 'marcia.coelho@servidor.educacao.sp.gov.br',      nome: 'MARCIA REGINA PEREIRA COELHO - GESTÃO' },
+    { email: 'patricia.alexandre1@educacao.sp.gov.br',         nome: 'PATRICIA DE OLIVEIRA ALEXANDRE VILERA - GESTÃO' },
+    { email: 'patricia.alexandre1@servidor.educacao.sp.gov.br',nome: 'PATRICIA DE OLIVEIRA ALEXANDRE VILERA - GESTÃO' },
+    { email: 'sueli.silva9@educacao.sp.gov.br',                nome: 'SUELI CORREIA DA SILVA - GESTÃO' },
+    { email: 'sueli.silva9@servidor.educacao.sp.gov.br',       nome: 'SUELI CORREIA DA SILVA - GESTÃO' },
 
     // ── Professores Fioravante ────────────────────────────────────────────────
     { email: 'alexandreos@prof.educacao.sp.gov.br',            nome: 'ALEXANDRE OLIVEIRA DOS SANTOS' },
