@@ -202,15 +202,15 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
   // Espaço total disponível para a caixa
   const availableForBox = PH - 12 - y - fixedBelowH;
 
-  // Usar a menor entre ideal e disponível (nunca menor que 30mm)
-  const finalBoxH = Math.min(boxHIdeal, Math.max(availableForBox, 30));
+  // Se a descrição cabe na página, usa o espaço disponível
+  // Se não cabe, usa o tamanho ideal e adiciona nova página se necessário
+  const needsNewPage = boxHIdeal > availableForBox;
+  const finalBoxH = needsNewPage ? boxHIdeal : Math.max(availableForBox, 30);
 
-  // Se a caixa precisou ser comprimida, ajustar espaçamento interno
-  const needsCompression = boxHIdeal > availableForBox;
-  const scaleLH = needsCompression
-    ? Math.max(3.5, (finalBoxH - 10) / Math.max(boxHIdeal - 10, 1) * LH)
-    : LH;
-  const boxFontSize = needsCompression ? Math.max(7, 9 * (scaleLH / LH)) : 9;
+  // Sem compressão — sempre usa fonte e espaçamento normal
+  const needsCompression = false;
+  const scaleLH = LH;
+  const boxFontSize = 9;
 
   // ── Desenhar caixa ────────────────────────────────────────────────────
   doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
@@ -297,6 +297,15 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
   }
 
   y += finalBoxH + gapBoxCb;
+
+  // ── Se a caixa de descrição ultrapassou a página, adiciona nova página ─
+  if (needsNewPage) {
+    doc.addPage();
+    // Borda na nova página
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
+    doc.rect(8, 8, PW - 16, PH - 16);
+    y = 20; // Reset y para o topo da nova página
+  }
 
   // ── Encaminhamentos (checkboxes) ──────────────────────────────────────
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
