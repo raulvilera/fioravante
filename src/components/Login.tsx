@@ -341,6 +341,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       }
 
       setResetEmailSent(lowerEmail);
+      setMessage('✅ INSTRUÇÕES DE REDEFINIÇÃO ENVIADAS! VERIFIQUE SEU E-MAIL (E A PASTA DE SPAM).');
       setShowResetModal(true);
       console.log('✅ [RESET] Solicitação processada para:', lowerEmail);
 
