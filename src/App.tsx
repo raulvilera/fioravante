@@ -479,7 +479,7 @@ const App = () => {
 
   // ── Importar ocorrências históricas do Google Sheets ──────────────────────
   const importIncidentsFromSheets = async () => {
-    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyZwPftxQz4_Xi__K1_LKTeQFcN0kPmGQ9kOo-xLu6G2Go2BBExa5pc1FLogx9_oPLU4w/exec';
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby_8NW9IrcpLvhEyNqwtp1G6s5MfInqrnYOKxCLj8cpxXqdufx7AiHDSJ9UMoT0mekHpw/exec';
 
     const makeId = (prefix: string, date: string, name: string, idx: number) =>
       `imported-${prefix}-${(date || '').replace(/\//g, '')}-${(name || '').slice(0, 8).replace(/\s/g, '')}-${idx}`;
