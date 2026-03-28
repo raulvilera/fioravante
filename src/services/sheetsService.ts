@@ -3,17 +3,19 @@ import { normalizeClassName } from '../utils/formatters';
 import { ALLOWED_CLASSES } from '../data/studentsData';
 import { supabase } from './supabaseClient';
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyZwPftxQz4_Xi__K1_LKTeQFcN0kPmGQ9kOo-xLu6G2Go2BBExa5pc1FLogx9_oPLU4w/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby_8NW9IrcpLvhEyNqwtp1G6s5MfInqrnYOKxCLj8cpxXqdufx7AiHDSJ9UMoT0mekHpw/exec';
 
 const ALLOWED_CLASSES_SET = new Set(ALLOWED_CLASSES);
 
 export const loadStudentsFromSheets = async (): Promise<Student[]> => {
   try {
     const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheetName=BANCODEDADOSGERAL&escola=fioravante`, {
-      method: 'GET', cache: 'no-cache',
+      method: 'GET',
+      cache: 'no-cache',
     });
     if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
     const data = await response.json();
+
     if (data.success && Array.isArray(data.students)) {
       const alunosFiltrados: Student[] = data.students.filter((s: Student) =>
         ALLOWED_CLASSES_SET.has(normalizeClassName(s.turma || ''))
@@ -49,6 +51,7 @@ export const importStudentsFromSheetsToSupabase = async (): Promise<ImportResult
   }
 
   // 1. Buscar alunos do Google Sheets
+  console.log('📥 Buscando alunos do Google Sheets...');
   let sheetsStudents: Student[] = [];
   try {
     const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheetName=BANCODEDADOSGERAL&escola=fioravante`, {
@@ -56,10 +59,12 @@ export const importStudentsFromSheetsToSupabase = async (): Promise<ImportResult
     });
     if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
     const data = await response.json();
-    if (!data.success || !Array.isArray(data.students)) throw new Error('Resposta inválida');
+    if (!data.success || !Array.isArray(data.students)) throw new Error('Resposta da planilha inválida');
     sheetsStudents = data.students.map((s: Student) => ({
-      ...s, turma: normalizeClassName(s.turma || ''),
+      ...s,
+      turma: normalizeClassName(s.turma || ''),
     }));
+    console.log(`✅ Google Sheets: ${sheetsStudents.length} alunos`);
   } catch (err) {
     result.errors.push(`Falha ao acessar Google Sheets: ${String(err)}`);
     return result;
@@ -81,31 +86,32 @@ export const importStudentsFromSheetsToSupabase = async (): Promise<ImportResult
   });
   result.skipped = sheetsStudents.length - unique.length;
 
-  // 3. Limpar tabela antes de reinserir (evita qualquer conflito)
-  await supabase.from('students').delete().eq('escola', 'fioravante');
-
-  // 4. Inserir em lotes de 500
-  // id baseado no RA para garantir idempotência
+  // 3. Usar RA como parte do id para garantir unicidade e permitir upsert seguro
   const CHUNK_SIZE = 500;
+
   for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
     const chunk = unique.slice(i, i + CHUNK_SIZE);
     const rows = chunk.map((s) => ({
-      id: `synced-${(s.ra || '').trim()}`,
+      id: `synced-ra-${(s.ra || '').trim()}`,
       nome: s.nome?.toUpperCase().trim() || '(SEM NOME)',
       ra: (s.ra || '').trim(),
       turma: s.turma,
       escola: 'fioravante',
     }));
 
-    const { error } = await supabase.from('students').insert(rows);
+    const { error } = await supabase.from('students').upsert(rows, { onConflict: 'id' });
     if (error) {
-      result.errors.push(`Erro no lote ${Math.floor(i / CHUNK_SIZE) + 1}: ${error.message}`);
+      const msg = `Erro no lote ${Math.floor(i / CHUNK_SIZE) + 1}: ${error.message}`;
+      console.error('❌', msg);
+      result.errors.push(msg);
     } else {
       result.inserted += chunk.length;
+      console.log(`✅ Lote ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunk.length} alunos`);
     }
   }
 
   result.success = result.inserted > 0;
+  console.log(`🎉 Concluído: ${result.inserted}/${result.total} alunos no Supabase`);
   return result;
 };
 
@@ -116,14 +122,17 @@ const formatProfReferrals = (incident: Incident): string => {
       const label =
         r.type === 'orientacao_individual' ? 'Orientação Individual' :
         r.type === 'encaminhamento_gestao' ? 'Enc. Equipe Gestora' :
-        r.type === 'busca_ativa' ? 'Busca Ativa' : r.type;
+        r.type === 'busca_ativa'           ? 'Busca Ativa' : r.type;
       return r.description ? `${label}: ${r.description}` : label;
     }).join(' | ');
   }
-  if (incident.referralType === 'orientacao_individual')
-    return incident.referralDescription ? `Orientação Individual: ${incident.referralDescription}` : 'Orientação Individual';
+  if (incident.referralType === 'orientacao_individual') {
+    return incident.referralDescription
+      ? `Orientação Individual: ${incident.referralDescription}`
+      : 'Orientação Individual';
+  }
   if (incident.referralType === 'encaminhamento_gestao') return 'Enc. Equipe Gestora';
-  if (incident.referralType === 'busca_ativa') return 'Busca Ativa';
+  if (incident.referralType === 'busca_ativa')           return 'Busca Ativa';
   return '---';
 };
 
@@ -149,14 +158,17 @@ export const saveToGoogleSheets = async (incident: Incident) => {
       incident.classRoom || '---', incident.professorName?.toUpperCase() || 'GESTAO',
       incident.ra || '---', incident.category || 'OCORRÊNCIA',
       incident.description.toUpperCase(), encaminhamentosProf,
-      incident.registerDate || incident.date, incident.returnDate || 'N/A', pdfLinkFormula,
+      incident.registerDate || incident.date, incident.returnDate || 'N/A',
+      pdfLinkFormula,
     ];
 
     await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', cache: 'no-cache',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
-        spreadsheetId: SHEET_REGISTROS_ID, sheetName, escola: 'fioravante',
+        spreadsheetId: SHEET_REGISTROS_ID,
+        sheetName,
+        escola: 'fioravante',
         values: isGestao ? valuesGestao : valuesProfessor,
       }),
     });
