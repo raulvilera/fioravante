@@ -966,12 +966,12 @@ const App = () => {
   // Filtragem de ocorrências por perfil:
   // Gestão: vê TODAS as ocorrências
   // Professor: vê APENAS as próprias (author_email === email logado)
-  // Registros legados sem authorEmail: incluídos apenas se source === 'professor'
+  // Registros sem authorEmail: NÃO aparecem para professores (apenas para gestão)
   const incidentsForProfessor = incidents.filter(inc => {
-    if (inc.authorEmail) {
-      return inc.authorEmail.toLowerCase().trim() === (user?.email || '').toLowerCase().trim();
+    if (!inc.authorEmail || inc.authorEmail.trim() === '') {
+      return false; // Registros sem autor não aparecem para professor
     }
-    return inc.source === 'professor';
+    return inc.authorEmail.toLowerCase().trim() === (user?.email || '').toLowerCase().trim();
   });
 
   const commonProps = {
