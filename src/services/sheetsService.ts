@@ -3,7 +3,7 @@ import { normalizeClassName } from '../utils/formatters';
 import { ALLOWED_CLASSES } from '../data/studentsData';
 import { supabase } from './supabaseClient';
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjuGbsuWZRdThSBiwBzzUAJTP7R8gBijaamj9Ae_0Eykmf7GLdc-IGub-ew8vrgr_uNA/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPcQPGLeEhzpM5Dk1Pv3Rxgkf8nCY4LN-Ou3eGzkx30QxfHuzUdMghd-CVwtR66b19wQ/exec';
 
 const ALLOWED_CLASSES_SET = new Set(ALLOWED_CLASSES);
 
