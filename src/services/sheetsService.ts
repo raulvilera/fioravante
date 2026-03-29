@@ -178,3 +178,4 @@ export const saveToGoogleSheets = async (incident: Incident) => {
     return false;
   }
 };
+
