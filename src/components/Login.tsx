@@ -41,8 +41,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [tempPassword, setTempPassword] = useState('');
 
   const generateTempPassword = () => {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return 'Fioravante@2026';
   };
 
   const resetAdminForm = () => {
