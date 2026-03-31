@@ -20,10 +20,14 @@ const GESTAO_EMAILS_HARDCODED = [
 // E-mails com acesso DUPLO (gestor + professor, podem alternar entre as duas visões)
 const DUAL_ACCESS_EMAILS = [
   'vilera@prof.educacao.sp.gov.br',
-  'patriciavilera@gmail.com',
-  'patriciavilera@gmai.com',
+  'vilera@professor.educacao.sp.gov.br',
+  'marcia.coelho@educacao.sp.gov.br',
+  'marcia.coelho@servidor.educacao.sp.gov.br',
+  'patricia.alexandre1@educacao.sp.gov.br',
+  'patricia.alexandre1@servidor.educacao.sp.gov.br',
   'sueli.silva9@educacao.sp.gov.br',
-  'marciacoelho@prof.educacao.sp.gov.br',
+  'sueli.silva9@servidor.educacao.sp.gov.br',
+  'patriciavilera@gmail.com',
 ];
 
 type View = 'login' | 'dashboard' | 'resetPassword' | 'unauthorized';
