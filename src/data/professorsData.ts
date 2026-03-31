@@ -81,6 +81,7 @@ export const PROFESSORS_DB: ProfessorData[] = [
     { email: 'isagomes@prof.educacao.sp.gov.br',               nome: 'MARIA ISABEL GOMES SANTANA FERNANDES' },
     { email: 'marianaventura@prof.educacao.sp.gov.br',         nome: 'MARIANA CAROLINA BOA VENTURA' },
     { email: 'marineide.sacramento@educacao.sp.gov.br',        nome: 'MARINEIDE DE OLIVEIRA MENDES SACRAMENTO' },
+    { email: 'marineide.sacramento@servidor.educacao.sp.gov.br', nome: 'MARINEIDE DE OLIVEIRA MENDES SACRAMENTO' },
     { email: 'patricia.alexandre1@educacao.sp.gov.br',         nome: 'PATRICIA DE OLIVEIRA ALEXANDRE VILERA' },
     { email: 'rosirenel@prof.educacao.sp.gov.br',              nome: 'ROSIRENE LEME BERALDI GOTTARDI' },
     { email: 'silmara.lima01@educacao.sp.gov.br',              nome: 'SILMARA APARECIDA DE LIMA' },
