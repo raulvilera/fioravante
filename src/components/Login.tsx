@@ -10,7 +10,8 @@ import {
   DUAL_ACCESS_EMAILS, 
   isGestaoEmail, 
   isInstitutionalEmail, 
-  normalizeEmail 
+  normalizeEmail,
+  getRoleFromLocalDB
 } from '../data/professorsData';
 
 interface LoginProps {
@@ -20,6 +21,18 @@ interface LoginProps {
 type AuthMode = 'login' | 'register' | 'forgot' | 'admin_register';
 
 const ESCOLA_ID = 'fioravante';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORREÇÃO PRINCIPAL: Helper para montar o filtro .or() com sintaxe correta.
+// O Supabase/PostgREST exige que valores com @, . e outros caracteres especiais
+// sejam envolvidos em aspas duplas dentro da string do filtro, caso contrário
+// o parser de schema falha com "DATABASE ERROR QUERYING SCHEMA".
+// ─────────────────────────────────────────────────────────────────────────────
+const buildEmailOrFilter = (emails: string[]): string => {
+  // Remove duplicatas e formata cada email entre aspas duplas
+  const unique = [...new Set(emails.filter(Boolean))];
+  return unique.map(e => `email.eq."${e}"`).join(',');
+};
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -63,12 +76,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const EMAIL_ALIASES: Record<string, string> = {};
 
   const sanitizeEmail = (email: string): string => {
-    return email
-      .normalize('NFKC')
-      .toLowerCase()
-      .trim()
-      .replace(/[\u200B-\u200D\uFEFF]/g, '')
-      .replace(/[!#$%^&*(),?":{}|<>]/g, '');
+    return email.toLowerCase().trim().replace(/[!#$%^&*(),?":{}|<>]/g, '');
   };
 
   const resolveEmailAlias = (email: string): string => {
@@ -77,9 +85,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const validateInstitutionalEmail = (email: string) => {
-    const cleanEmail = sanitizeEmail(email);
-    return FIXED_GESTAO_EMAILS.some(allowed => sanitizeEmail(allowed) === cleanEmail) ||
-      isInstitutionalEmail(cleanEmail);
+    const lowerEmail = email.toLowerCase().trim();
+    const SPECIAL_MANAGEMENT = FIXED_GESTAO_EMAILS;
+
+    if (SPECIAL_MANAGEMENT.includes(lowerEmail)) {
+      return true;
+    }
+
+    return lowerEmail.endsWith('@prof.educacao.sp.gov.br') ||
+      lowerEmail.endsWith('@professor.educacao.sp.gov.br') ||
+      lowerEmail.endsWith('@servidor.educacao.sp.gov.br') ||
+      lowerEmail.endsWith('@educacao.sp.gov.br');
   };
 
   const registeredName = useMemo(() => {
@@ -91,22 +107,22 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   // ─────────────────────────────────────────────────────────────────────────
   // Helper reutilizável: busca o role na tabela authorized_professors.
-  // Usa .in() para evitar a sintaxe frágil de filtros .or() com e-mails.
+  // Usa buildEmailOrFilter para garantir sintaxe correta no .or()
   // ─────────────────────────────────────────────────────────────────────────
   const queryProfessorRole = async (displayEmail: string): Promise<string | null> => {
     const eBase = displayEmail.split('@')[0];
-    const candidateEmails = [...new Set([
+    const candidateEmails = [
       displayEmail,
       `${eBase}@prof.educacao.sp.gov.br`,
       `${eBase}@professor.educacao.sp.gov.br`,
       `${eBase}@servidor.educacao.sp.gov.br`,
-    ])];
+    ];
 
     const { data, error } = await supabase
       .from('authorized_professors')
       .select('role')
       .eq('escola', 'fioravante')
-      .in('email', candidateEmails)
+      .or(buildEmailOrFilter(candidateEmails))
       .maybeSingle();
 
     if (error) {
@@ -145,55 +161,94 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       console.log('✅ [LOGIN] E-mail validado como institucional');
       console.log('🔗 [LOGIN] Conectando ao Supabase Auth...');
 
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password
-      });
+      let sessionUser = null;
+      let isOfflineMode = false;
 
-      if (authError) {
-        console.error('❌ [LOGIN] Erro de autenticação Supabase:', authError);
-        if (authError.message.includes('Invalid login credentials')) {
-          throw new Error('CREDENCIAIS INVÁLIDAS. VERIFIQUE SEUS DADOS OU SE JÁ CONFIRMOU SEU E-MAIL NO LINK ENVIADO.');
+      try {
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password
+        });
+
+        if (authError) {
+          console.error('❌ [LOGIN] Erro de autenticação Supabase:', authError);
+          if (authError.message.includes('Invalid login credentials') || authError.message.includes('invalid_credentials')) {
+            throw new Error('CREDENCIAIS INVÁLIDAS. VERIFIQUE SEUS DADOS OU SE JÁ CONFIRMOU SEU E-MAIL NO LINK ENVIADO.');
+          }
+          throw new Error(authError.message.toUpperCase());
         }
-        throw new Error(authError.message.toUpperCase());
+
+        if (data.user) {
+          sessionUser = data.user;
+        }
+      } catch (authErr: any) {
+        console.warn('⚠️ [LOGIN] Erro ao conectar com Supabase Auth:', authErr);
+
+        if (authErr.message.includes('CREDENCIAIS INVÁLIDAS') || authErr.message.includes('ACESSO NEGADO')) {
+          throw authErr;
+        }
+
+        // Caso contrário, tratamos como offline e verificamos localmente
+        const localRole = getRoleFromLocalDB(displayEmail);
+        if (localRole) {
+          console.log('✅ [LOGIN] Entrando em Modo Local/Offline devido a erro de conexão');
+          isOfflineMode = true;
+          setMessage('CONEXÃO COM O SERVIDOR INDISPONÍVEL. ENTRANDO EM MODO OFFLINE/LOCAL...');
+        } else {
+          throw new Error('ACESSO NEGADO: SEU E-MAIL NÃO CONSTA NA LISTA DE AUTORIZADOS LOCAL E O SERVIDOR ESTÁ INDISPONÍVEL.');
+        }
       }
 
-      if (data.user) {
+      if (sessionUser || isOfflineMode) {
         console.log('✅ [LOGIN] Autenticado! Buscando autorização para:', displayEmail);
 
         if (isGestaoEmail(displayEmail)) {
           console.log('✅ [LOGIN] E-mail de gestão. Role: gestor');
           clearTimeout(loginTimeout);
-          onLogin({ email: displayEmail, role: 'gestor' });
+          if (isOfflineMode) {
+            setTimeout(() => onLogin({ email: displayEmail, role: 'gestor' }), 1500);
+          } else {
+            onLogin({ email: displayEmail, role: 'gestor' });
+          }
           return;
         }
 
         if (DUAL_ACCESS_EMAILS.some(e => normalizeEmail(e) === normalizeEmail(displayEmail))) {
           console.log('✅ [LOGIN] Acesso duplo. Role: gestor');
           clearTimeout(loginTimeout);
-          onLogin({ email: displayEmail, role: 'gestor' });
+          if (isOfflineMode) {
+            setTimeout(() => onLogin({ email: displayEmail, role: 'gestor' }), 1500);
+          } else {
+            onLogin({ email: displayEmail, role: 'gestor' });
+          }
           return;
         }
 
-        // Busca role com timeout — agora usando queryProfessorRole corrigido
-        const fetchRoleWithTimeout = async (): Promise<string | null> => {
-          const timeoutPromise = new Promise<null>((resolve) =>
-            setTimeout(() => {
-              console.warn('⚠️ [LOGIN] Consulta ao banco deu timeout, usando fallback local.');
-              resolve(null);
-            }, 5000)
-          );
+        let userRole: 'gestor' | 'professor' | null = null;
 
-          try {
-            const rolePromise = queryProfessorRole(displayEmail);
-            return await Promise.race([rolePromise, timeoutPromise]);
-          } catch {
-            return null;
-          }
-        };
+        if (isOfflineMode) {
+          userRole = getRoleFromLocalDB(displayEmail);
+        } else {
+          // Busca role com timeout — agora usando queryProfessorRole corrigido
+          const fetchRoleWithTimeout = async (): Promise<string | null> => {
+            const timeoutPromise = new Promise<null>((resolve) =>
+              setTimeout(() => {
+                console.warn('⚠️ [LOGIN] Consulta ao banco deu timeout, usando fallback local.');
+                resolve(null);
+              }, 5000)
+            );
 
-        const dbRole = await fetchRoleWithTimeout();
-        let userRole: 'gestor' | 'professor' | null = dbRole as any;
+            try {
+              const rolePromise = queryProfessorRole(displayEmail);
+              return await Promise.race([rolePromise, timeoutPromise]);
+            } catch {
+              return null;
+            }
+          };
+
+          const dbRole = await fetchRoleWithTimeout();
+          userRole = dbRole as any;
+        }
 
         // Fallback para lista local se não encontrou no banco
         if (!userRole && isProfessorRegistered(displayEmail)) {
@@ -204,10 +259,16 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         if (userRole) {
           console.log('🚀 [LOGIN] Entrando com role:', userRole);
           clearTimeout(loginTimeout);
-          onLogin({ email: displayEmail, role: userRole });
+          if (isOfflineMode) {
+            setTimeout(() => onLogin({ email: displayEmail, role: userRole! }), 1500);
+          } else {
+            onLogin({ email: displayEmail, role: userRole });
+          }
         } else {
           console.error('❌ [LOGIN] Acesso negado para:', displayEmail);
-          await supabase.auth.signOut();
+          if (!isOfflineMode) {
+            await supabase.auth.signOut();
+          }
           throw new Error('ACESSO NEGADO: SEU E-MAIL NÃO CONSTA NA LISTA DE AUTORIZADOS.');
         }
       }
@@ -352,7 +413,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setError(''); setIsLoading(true);
     try {
-      const lowerEmail = sanitizeEmail(adminEmail);
+      const lowerEmail = adminEmail.toLowerCase().trim();
       if (!isGestaoEmail(lowerEmail) && !DUAL_ACCESS_EMAILS.some(x => normalizeEmail(x) === normalizeEmail(lowerEmail))) {
         throw new Error('APENAS GESTORES PODEM USAR ESTA FUNÇÃO.');
       }
@@ -373,7 +434,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setError(''); setMessage(''); setIsLoading(true);
     try {
-      const lowerEmail = sanitizeEmail(newProfEmail);
+      const lowerEmail = newProfEmail.toLowerCase().trim();
       const nome = newProfNome.toUpperCase().trim();
       if (!lowerEmail || !nome) throw new Error('PREENCHA O E-MAIL E O NOME DO PROFESSOR.');
       if (!validateInstitutionalEmail(lowerEmail)) throw new Error('UTILIZE UM E-MAIL INSTITUCIONAL (@PROF OU @PROFESSOR).');
