@@ -21,18 +21,6 @@ type AuthMode = 'login' | 'register' | 'forgot' | 'admin_register';
 
 const ESCOLA_ID = 'fioravante';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CORREÇÃO PRINCIPAL: Helper para montar o filtro .or() com sintaxe correta.
-// O Supabase/PostgREST exige que valores com @, . e outros caracteres especiais
-// sejam envolvidos em aspas duplas dentro da string do filtro, caso contrário
-// o parser de schema falha com "DATABASE ERROR QUERYING SCHEMA".
-// ─────────────────────────────────────────────────────────────────────────────
-const buildEmailOrFilter = (emails: string[]): string => {
-  // Remove duplicatas e formata cada email entre aspas duplas
-  const unique = [...new Set(emails.filter(Boolean))];
-  return unique.map(e => `email.eq."${e}"`).join(',');
-};
-
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -75,7 +63,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const EMAIL_ALIASES: Record<string, string> = {};
 
   const sanitizeEmail = (email: string): string => {
-    return email.toLowerCase().trim().replace(/[!#$%^&*(),?":{}|<>]/g, '');
+    return email
+      .normalize('NFKC')
+      .toLowerCase()
+      .trim()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/[!#$%^&*(),?":{}|<>]/g, '');
   };
 
   const resolveEmailAlias = (email: string): string => {
@@ -106,22 +99,22 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   // ─────────────────────────────────────────────────────────────────────────
   // Helper reutilizável: busca o role na tabela authorized_professors.
-  // Usa buildEmailOrFilter para garantir sintaxe correta no .or()
+  // Usa .in() para evitar a sintaxe frágil de filtros .or() com e-mails.
   // ─────────────────────────────────────────────────────────────────────────
   const queryProfessorRole = async (displayEmail: string): Promise<string | null> => {
     const eBase = displayEmail.split('@')[0];
-    const candidateEmails = [
+    const candidateEmails = [...new Set([
       displayEmail,
       `${eBase}@prof.educacao.sp.gov.br`,
       `${eBase}@professor.educacao.sp.gov.br`,
       `${eBase}@servidor.educacao.sp.gov.br`,
-    ];
+    ])];
 
     const { data, error } = await supabase
       .from('authorized_professors')
       .select('role')
       .eq('escola', 'fioravante')
-      .or(buildEmailOrFilter(candidateEmails))
+      .in('email', candidateEmails)
       .maybeSingle();
 
     if (error) {
