@@ -77,17 +77,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const validateInstitutionalEmail = (email: string) => {
-    const lowerEmail = email.toLowerCase().trim();
-    const SPECIAL_MANAGEMENT = FIXED_GESTAO_EMAILS;
-
-    if (SPECIAL_MANAGEMENT.includes(lowerEmail)) {
-      return true;
-    }
-
-    return lowerEmail.endsWith('@prof.educacao.sp.gov.br') ||
-      lowerEmail.endsWith('@professor.educacao.sp.gov.br') ||
-      lowerEmail.endsWith('@servidor.educacao.sp.gov.br') ||
-      lowerEmail.endsWith('@educacao.sp.gov.br');
+    const cleanEmail = sanitizeEmail(email);
+    return FIXED_GESTAO_EMAILS.some(allowed => sanitizeEmail(allowed) === cleanEmail) ||
+      isInstitutionalEmail(cleanEmail);
   };
 
   const registeredName = useMemo(() => {
@@ -360,7 +352,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setError(''); setIsLoading(true);
     try {
-      const lowerEmail = adminEmail.toLowerCase().trim();
+      const lowerEmail = sanitizeEmail(adminEmail);
       if (!isGestaoEmail(lowerEmail) && !DUAL_ACCESS_EMAILS.some(x => normalizeEmail(x) === normalizeEmail(lowerEmail))) {
         throw new Error('APENAS GESTORES PODEM USAR ESTA FUNÇÃO.');
       }
@@ -381,7 +373,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setError(''); setMessage(''); setIsLoading(true);
     try {
-      const lowerEmail = newProfEmail.toLowerCase().trim();
+      const lowerEmail = sanitizeEmail(newProfEmail);
       const nome = newProfNome.toUpperCase().trim();
       if (!lowerEmail || !nome) throw new Error('PREENCHA O E-MAIL E O NOME DO PROFESSOR.');
       if (!validateInstitutionalEmail(lowerEmail)) throw new Error('UTILIZE UM E-MAIL INSTITUCIONAL (@PROF OU @PROFESSOR).');
