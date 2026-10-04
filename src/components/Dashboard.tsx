@@ -38,12 +38,12 @@ const AlunoDropdown: React.FC<AlunoDropdownProps> = ({ value, onChange, alunos, 
           >
             Selecione o Aluno...
           </div>
-          <div className="max-h-[336px] overflow-y-auto p-2 flex flex-col gap-1.5">
+          <div className="max-h-[336px] overflow-y-auto py-1.5 flex flex-col gap-1.5">
             {alunos.map((s, idx) => (
               <div
                 key={s.ra}
                 onClick={() => { onChange(s.nome); setOpen(false); }}
-                className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase cursor-pointer transition-colors
+                className={`px-5 py-2.5 text-xs font-black uppercase cursor-pointer transition-colors
                   ${value === s.nome
                     ? 'bg-blue-600 text-white'
                     : idx % 2 === 0
