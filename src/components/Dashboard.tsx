@@ -31,19 +31,19 @@ const AlunoDropdown: React.FC<AlunoDropdownProps> = ({ value, onChange, alunos, 
         </svg>
       </button>
       {open && (
-        <div className="absolute z-[200] w-full mt-1 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="absolute z-[200] w-full mt-1 bg-gradient-to-r from-black via-[#001030] to-[#002b5c] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
           <div
             onClick={() => { onChange(''); setOpen(false); }}
-            className="px-5 py-2.5 text-xs font-bold text-gray-400 italic cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-100"
+            className="px-5 py-2.5 text-xs font-bold text-white/60 italic cursor-pointer hover:bg-white/10 transition-colors border-b border-white/10"
           >
             Selecione o Aluno...
           </div>
-          <div className="max-h-56 overflow-y-auto">
+          <div className="max-h-[336px] overflow-y-auto p-2 flex flex-col gap-1.5">
             {alunos.map((s, idx) => (
               <div
                 key={s.ra}
                 onClick={() => { onChange(s.nome); setOpen(false); }}
-                className={`px-5 py-2.5 text-xs font-black uppercase cursor-pointer transition-colors
+                className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase cursor-pointer transition-colors
                   ${value === s.nome
                     ? 'bg-blue-600 text-white'
                     : idx % 2 === 0

@@ -628,7 +628,7 @@ const ProfessorView: React.FC<ProfessorViewProps> = ({
                   <label className="text-[10px] font-black text-white uppercase tracking-widest">SELECIONE OS ALUNOS</label>
                   <span className="text-[9px] font-black bg-white/10 text-white px-3 py-1 rounded-full uppercase">{selectedStudents.length} Selecionado(s)</span>
                 </div>
-                <div className="w-full h-64 overflow-y-auto bg-gradient-to-r from-black via-[#001030] to-[#002b5c] border border-white/10 rounded-2xl p-4 custom-scrollbar grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 shadow-inner">
+                <div className="w-full h-96 overflow-y-auto bg-gradient-to-r from-black via-[#001030] to-[#002b5c] border border-white/10 rounded-2xl p-4 custom-scrollbar grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 shadow-inner">
                   {classRoom ? studentsInClass.map((a, idx) => (
                     <label key={a.ra || idx} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${selectedStudents.includes(a.nome) ? 'bg-blue-600 border-blue-400 text-white shadow-md' : idx % 2 === 0 ? 'bg-white border-gray-100 text-black hover:border-blue-200' : 'bg-blue-50 border-blue-100 text-black hover:border-blue-300'}`}>
                       <input type="checkbox" checked={selectedStudents.includes(a.nome)} onChange={() => toggleStudent(a.nome)} className="w-5 h-5 rounded-md text-blue-600" />
