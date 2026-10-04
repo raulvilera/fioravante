@@ -60,8 +60,13 @@ const AlunoDropdown: React.FC<AlunoDropdownProps> = ({ value, onChange, alunos, 
     </div>
   );
 };
-import type { Incident, User, Student, ManagementReferral } from '../types';
-import { generateIncidentPDF } from '../services/pdfService';
+import type { Incident, User, Student, ManagementReferral, Resolucao68Data, NivelResolucao68, HipoteseAfastamento, AfastamentoPreventivo } from '../types';
+import { generateIncidentPDF, generateRelatorioCircunstanciado } from '../services/pdfService';
+import {
+  CATEGORIAS_GESTAO, CATEGORIA_AFASTAMENTO, CATEGORIA_ESTUDO_DIRIGIDO, NIVEIS, LISTA_INTERVENCOES,
+  HIPOTESES_AFASTAMENTO, MAX_DIAS_AFASTAMENTO, ENC_REDE_PROTETIVA, ENC_ESTUDO_DIRIGIDO,
+  situacaoAfastamento, ultimoDiaLetivo, proximoDiaLetivo, formatBR, isCategoriaRestritiva, hasIntervencao,
+} from '../data/resolucao68';
 import StatusBadge from './StatusBadge';
 import { supabase } from '../services/supabaseClient';
 import { STUDENTS_DB } from '../data/studentsData';
@@ -93,6 +98,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
   const [classification, setClassification] = useState('');
   const [description, setDescription] = useState('');
 
+  // ── Resolução SEDUC nº 68/2026 — campos do novo registro ─────────────────
+  const [nivel, setNivel] = useState<NivelResolucao68 | ''>('');
+  const [dataCiencia, setDataCiencia] = useState('');
+  const [convivaRegistrado, setConvivaRegistrado] = useState(false);
+  const [convivaProtocolo, setConvivaProtocolo] = useState('');
+  const [afHipotese, setAfHipotese] = useState<HipoteseAfastamento | ''>('');
+  const [afMotivacao, setAfMotivacao] = useState('');
+  const [afDias, setAfDias] = useState(1);
+  const [afFamilia, setAfFamilia] = useState(false);
+  const [afURE, setAfURE] = useState(false);
+  const [afRede, setAfRede] = useState(false);
+  const [afPlano, setAfPlano] = useState('');
+
   // Nome automático do gestor
   useEffect(() => {
     if (user?.email) setProfessorName(getProfessorNameFromEmail(user.email));
@@ -120,35 +138,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
   const dgAskConfirm = (msg: string, onOk: () => void) => setDgConfirm({ msg, onOk });
 
   const [registerDate, setRegisterDate] = useState(new Date().toISOString().split('T')[0]);
-  const [returnDate, setReturnDate] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
 
   const regDateRef = useRef<HTMLInputElement>(null!);
-  const retDateRef = useRef<HTMLInputElement>(null!);
 
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<Incident | null>(null);
   const [newStatus, setNewStatus] = useState<Incident['status']>('Pendente');
   const [feedback, setFeedback] = useState('');
+  // Dados da Res. 68 em edição no modal de atualização
+  const [r68Edit, setR68Edit] = useState<Resolucao68Data>({});
+  const upR68 = (patch: Partial<Resolucao68Data>) => setR68Edit(p => ({ ...p, ...patch }));
+  const upAf = (patch: Partial<AfastamentoPreventivo>) =>
+    setR68Edit(p => (p.afastamento ? { ...p, afastamento: { ...p.afastamento, ...patch } } : p));
 
   // ── Estados dos Encaminhamentos da Gestão ───────────────────────────────
   // Cada item da lista pode ser marcado e ter uma descrição associada
-  const LISTA_ENCAMINHAMENTOS_GESTAO: { label: string; popUp: boolean; grupo?: string }[] = [
-    { label: 'Orientação individual com o estudante',                           popUp: true },
-    { label: 'Mediação de conflito realizada pela equipe gestora/POC',          popUp: true },
-    { label: 'Necessidade de acompanhamento e diálogo em casa sobre o ocorrido',popUp: true },
-    { label: 'Convocação dos responsáveis para uma reunião presencial',         popUp: true },
-    { label: 'Recorrência / medidas educativas',                                popUp: true },
-    { label: 'Orientação ao professor',                                         popUp: true },
-    { label: 'Encaminhamento à Rede Protetiva',                                 popUp: true },
-    { label: 'Busca ativa',                                                     popUp: true },
-    { label: 'Outros',                                                          popUp: true },
-    // ── Ocorrências especiais ────────────────────────────────────────────────
-    { label: 'Incidente',  popUp: true, grupo: 'especial' },
-    { label: 'Acidente',   popUp: true, grupo: 'especial' },
-    { label: 'Agressão',   popUp: true, grupo: 'especial' },
-  ];
+  // Intervenções pedagógicas do Art. 7º da Res. SEDUC 68/2026 (ver src/data/resolucao68.ts)
+  const LISTA_ENCAMINHAMENTOS_GESTAO: { label: string; popUp: boolean; grupo?: string }[] =
+    LISTA_INTERVENCOES.map(i => ({ label: i.label, popUp: true, grupo: i.grupo }));
   const [selectedMgmtReferrals, setSelectedMgmtReferrals] = useState<string[]>([]);
   const [mgmtReferralDescriptions, setMgmtReferralDescriptions] = useState<Record<string, string>>({});
   const [showMgmtReferralModal, setShowMgmtReferralModal] = useState<string | null>(null); // nome do encaminhamento aberto
@@ -222,7 +231,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
             managementFeedback: i.management_feedback,
             managementFeedbackAt: i.management_feedback_at,
             managementFeedbackReadAt: i.management_feedback_read_at,
-            lastViewedAt: i.last_viewed_at
+            lastViewedAt: i.last_viewed_at,
+            professorReferrals: i.professor_referrals || undefined,
+            managementReferrals: i.management_referrals || undefined,
+            resolucao68: i.resolucao68 || undefined
           })));
         }
       }
@@ -275,7 +287,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
     e.preventDefault();
     if (!studentName || !description || !classRoom || !classification || !professorName) {
       dgShowToast("Preencha todos os campos obrigatórios.", "warning"); return;
-      return;
+    }
+    if (!nivel) {
+      dgShowToast("Classifique o nível da situação (Art. 5º da Res. SEDUC 68/2026).", "warning"); return;
+    }
+    const isAfastamento = classification === CATEGORIA_AFASTAMENTO;
+    if (isAfastamento) {
+      if (nivel !== 'III') {
+        dgShowToast("O afastamento preventivo só cabe em situações de Nível III (Art. 5º, III).", "warning"); return;
+      }
+      if (!afHipotese) {
+        dgShowToast("Indique a hipótese que fundamenta o afastamento (Art. 11, §1º).", "warning"); return;
+      }
+      if (afMotivacao.trim().length < 20) {
+        dgShowToast("Descreva a motivação expressa, com elementos objetivos. É vedado afastar com base em receios genéricos (Art. 5º, §3º e Art. 28, I).", "warning", 7000); return;
+      }
+      if (afDias < 1 || afDias > MAX_DIAS_AFASTAMENTO) {
+        dgShowToast(`O prazo inicial é de no máximo ${MAX_DIAS_AFASTAMENTO} dias letivos (Art. 11, §5º).`, "warning"); return;
+      }
+      if (!afPlano.trim()) {
+        dgShowToast("Informe o plano de estudos que garante a continuidade pedagógica (Art. 11, §3º).", "warning"); return;
+      }
+      if (!afFamilia || !afURE) {
+        dgShowToast("O afastamento deve ser comunicado imediatamente à família e à URE (Art. 12).", "warning", 6000); return;
+      }
     }
 
     setIsSaving(true);
@@ -293,22 +328,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
       date: formattedDate,
       time: timeStr,
       registerDate: formattedDate,
-      returnDate: classification === 'MEDIDA EDUCATIVA' && returnDate ? returnDate.split('-').reverse().join('/') : undefined,
+      returnDate: isAfastamento ? formatBR(proximoDiaLetivo(ultimoDiaLetivo(registerDate, afDias))) : undefined,
       discipline: 'N/A',
       irregularities: '',
       description: description.toUpperCase(),
-      severity: 'Média',
+      severity: nivel === 'III' ? 'Alta' : nivel === 'II' ? 'Média' : 'Baixa',
       status: 'Pendente',
       category: classification,
       source: 'gestao',
       authorEmail: user.email,
       escola: 'fioravante',
+      resolucao68: {
+        nivel,
+        dataCiencia: dataCiencia || registerDate,
+        conviva: { registrado: convivaRegistrado, protocolo: convivaProtocolo.trim() || undefined },
+        ...(isAfastamento && afHipotese ? {
+          afastamento: {
+            hipotese: afHipotese,
+            motivacao: afMotivacao.trim().toUpperCase(),
+            inicio: registerDate,
+            diasLetivos: afDias,
+            comunicacaoFamilia: afFamilia,
+            comunicacaoURE: afURE,
+            comunicacaoRede: afRede,
+            planoEstudos: afPlano.trim().toUpperCase(),
+          },
+        } : {}),
+      },
     };
 
     onSave(newInc);
     setStudentName('');
     setDescription('');
-    setReturnDate('');
+    setNivel(''); setDataCiencia(''); setConvivaRegistrado(false); setConvivaProtocolo('');
+    setAfHipotese(''); setAfMotivacao(''); setAfDias(1); setAfFamilia(false); setAfURE(false); setAfRede(false); setAfPlano('');
     setIsSaving(false);
   };
 
@@ -316,6 +369,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
     setIsUpdatingStatus(inc);
     setNewStatus(inc.status);
     setFeedback(inc.managementFeedback || '');
+    setR68Edit(inc.resolucao68 ? JSON.parse(JSON.stringify(inc.resolucao68)) : {});
     // Pré-preencher encaminhamentos se já existirem
     if (inc.managementReferrals && inc.managementReferrals.length > 0) {
       setSelectedMgmtReferrals(inc.managementReferrals.map(r => r.type));
@@ -337,9 +391,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
       description: (mgmtReferralDescriptions[type] || '').toUpperCase(),
     }));
 
+    const pr = r68Edit.afastamento?.prorrogacao;
+    if (pr) {
+      if (!pr.dataConselho || pr.fundamentacao.trim().length < 20) {
+        dgShowToast("A prorrogação exige reavaliação fundamentada e apreciação do Conselho de Escola (Art. 11, §§6º e 7º).", "warning", 6000); return;
+      }
+      if (pr.diasLetivos < 1 || pr.diasLetivos > MAX_DIAS_AFASTAMENTO) {
+        dgShowToast(`A prorrogação é limitada a igual período: até ${MAX_DIAS_AFASTAMENTO} dias letivos (Art. 11, §6º).`, "warning"); return;
+      }
+      if (!pr.familiaComunicada) {
+        dgShowToast("A prorrogação deve ser comunicada formalmente à família (Art. 11, §7º).", "warning"); return;
+      }
+    }
+
     const updated: Incident = {
       ...isUpdatingStatus,
       status: newStatus,
+      resolucao68: Object.keys(r68Edit).length > 0 ? r68Edit : undefined,
       managementFeedback: feedback.toUpperCase(),
       managementFeedbackAt: new Date().toISOString(),
       managementReferrals: managementReferrals.length > 0 ? managementReferrals : undefined,
@@ -558,25 +626,82 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
     return { topClasses, topStudents, topTypes, topProfs, topManagers };
   }, [incidents]);
 
-  const pedagogicalGuide = {
-    'OCORRÊNCIA DISCIPLINAR': [
-      'Advertência verbal ou escrita',
-      'Convocação dos pais ou responsáveis para mediação',
-      'Encaminhamento para o Conselho de Escola',
-      'Suspensão temporária (casos graves)'
+  // ── Resolução SEDUC 68/2026: histórico do aluno selecionado no formulário ──
+  const historicoAluno = useMemo(() => {
+    if (!studentName || !classRoom) return { total: 0, estudosDirigidos: 0, comIntervencao: 0 };
+    const doAluno = incidents.filter(i => i.studentName === studentName.toUpperCase() && i.classRoom === classRoom);
+    return {
+      total: doAluno.length,
+      estudosDirigidos: doAluno.filter(i => i.category === CATEGORIA_ESTUDO_DIRIGIDO || hasIntervencao(i, ENC_ESTUDO_DIRIGIDO)).length,
+      comIntervencao: doAluno.filter(i => (i.managementReferrals || []).length > 0).length,
+    };
+  }, [incidents, studentName, classRoom]);
+
+  // Afastamentos preventivos ainda não encerrados (Art. 11)
+  const afastamentosEmCurso = useMemo(() =>
+    incidents
+      .filter(i => i.resolucao68?.afastamento)
+      .map(i => ({ inc: i, sit: situacaoAfastamento(i.resolucao68!.afastamento!) }))
+      .filter(x => !x.sit.encerrado)
+      .sort((a, b) => a.sit.fim.localeCompare(b.sit.fim)),
+  [incidents]);
+
+  // Indicadores de monitoramento (Art. 9º, §4º)
+  const indicadores = useMemo(() => {
+    const porAluno: Record<string, number> = {};
+    const porIntervencao: Record<string, number> = {};
+    const porNivel: Record<string, number> = { I: 0, II: 0, III: 0, '—': 0 };
+    let resolvidas = 0, rede = 0, estudos = 0, afast = 0, afastVencidos = 0, conviva = 0, totalIntervencoes = 0;
+
+    incidents.forEach(i => {
+      const chave = `${i.studentName}|${i.classRoom}`;
+      porAluno[chave] = (porAluno[chave] || 0) + 1;
+      if (['resolvida', 'resolvido'].includes((i.status || '').toLowerCase())) resolvidas++;
+      (i.managementReferrals || []).forEach(r => {
+        const especial = LISTA_INTERVENCOES.find(l => l.label === r.type)?.grupo === 'especial';
+        if (especial) return;
+        porIntervencao[r.type] = (porIntervencao[r.type] || 0) + 1;
+        totalIntervencoes++;
+      });
+      if (hasIntervencao(i, ENC_REDE_PROTETIVA)) rede++;
+      if (i.category === CATEGORIA_ESTUDO_DIRIGIDO || hasIntervencao(i, ENC_ESTUDO_DIRIGIDO)) estudos++;
+      if (i.resolucao68?.afastamento) {
+        afast++;
+        if (situacaoAfastamento(i.resolucao68.afastamento).vencido) afastVencidos++;
+      }
+      if (i.resolucao68?.conviva?.registrado) conviva++;
+      porNivel[i.resolucao68?.nivel || '—']++;
+    });
+
+    const alunos = Object.keys(porAluno).length;
+    const reincidentes = Object.values(porAluno).filter(c => c >= 2).length;
+    return {
+      total: incidents.length, alunos, reincidentes, resolvidas, rede, estudos, afast, afastVencidos, conviva,
+      totalIntervencoes, porNivel,
+      porIntervencao: Object.entries(porIntervencao).sort((a, b) => b[1] - a[1]),
+    };
+  }, [incidents]);
+
+  // Guia de respostas institucionais conforme a gradação do Art. 5º
+  const pedagogicalGuide: Record<string, string[]> = {
+    [NIVEIS.I.titulo]: [
+      'Acolhimento e escuta dos envolvidos (Art. 7º, I)',
+      'Orientação individual e retomada dos combinados (Art. 7º, II)',
+      'Mediação de conflitos / práticas restaurativas com adesão voluntária (Art. 7º, VI)',
+      'Registro na Plataforma Conviva conforme o Protocolo 179 (Art. 9º)',
     ],
-    'OCORRÊNCIA PEDAGÓGICA': [
-      'Reforço escolar ou recuperação paralela',
-      'Acompanhamento psicopedagógico',
-      'Adaptação de atividades curriculares',
-      'Criação de plano de estudo individualizado'
+    [NIVEIS.II.titulo]: [
+      'Plano individual de acompanhamento e repactuação de compromisso (Art. 7º, III)',
+      'Articulação com a família e adulto de referência (Art. 7º, IV e V)',
+      'Estudo dirigido sob supervisão da gestão — nunca como castigo (Arts. 7º, IX e 8º)',
+      'Se reiterado: registrar, comunicar à família e avaliar efetividade (Art. 7º, §5º)',
     ],
-    'MEDIDA EDUCATIVA': [
-      'Monitoria voluntária por período determinado',
-      'Escrita de reflexão crítica sobre o ocorrido',
-      'Serviço de apoio à organização da biblioteca/escola',
-      'Apresentação de trabalho sobre cidadania'
-    ]
+    [NIVEIS.III.titulo]: [
+      'Afastamento preventivo: motivado, máx. 5 dias letivos, com plano de estudos (Art. 11)',
+      'Comunicação imediata à família, à URE e, se preciso, à rede protetiva (Art. 12)',
+      'Prorrogação só com reavaliação da Direção e apreciação do Conselho de Escola (Art. 11, §§6º-7º)',
+      'Transferência cautelar: relatório circunstanciado, Conselho, contraditório e URE (Arts. 14-18)',
+    ],
   };
 
   return (
@@ -669,6 +794,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
       <main className="max-w-[1700px] mx-auto mt-6 sm:mt-8 px-4 sm:px-6 space-y-8 sm:space-y-10">
         {activeTab === 'registros' && (
           <>
+            {/* ── Afastamentos preventivos em curso (Res. SEDUC 68/2026, Art. 11) ── */}
+            {afastamentosEmCurso.length > 0 && (
+              <div className="bg-white rounded-[28px] shadow-2xl overflow-hidden border-2 border-red-300">
+                <div className="bg-gradient-to-r from-red-900 to-red-700 px-6 py-3 text-white">
+                  <h2 className="text-[10px] sm:text-xs font-black uppercase tracking-widest">⏱ Afastamentos preventivos em curso</h2>
+                  <p className="text-[9px] font-bold text-red-100">Ao fim do prazo, sem deliberação fundamentada, o estudante deve retornar com plano de acompanhamento (Art. 11, §8º).</p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {afastamentosEmCurso.map(({ inc, sit }) => (
+                    <div key={inc.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[11px] font-black text-[#002b5c] uppercase">{inc.studentName} <span className="text-blue-600">· {inc.classRoom}</span></p>
+                        <p className="text-[9px] font-bold text-gray-500 uppercase">
+                          Até {formatBR(sit.fim)} · retorno previsto {formatBR(sit.retornoPrevisto)}
+                          {inc.resolucao68?.afastamento?.prorrogacao && ' · prorrogado'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${sit.vencido ? 'bg-red-600 text-white animate-pulse' : 'bg-orange-100 text-orange-700'}`}>
+                          {sit.vencido ? 'Prazo vencido — registrar retorno ou prorrogação' : 'Em curso'}
+                        </span>
+                        <button onClick={() => openUpdateModal(inc)} className="px-3 py-1.5 bg-teal-500 hover:bg-teal-600 text-white rounded-xl text-[9px] font-black uppercase">Atualizar</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-[32px] shadow-2xl overflow-hidden border border-white/10">
               <div className="bg-gradient-to-r from-black to-[#002b5c] py-3 text-center border-b border-blue-900/30">
                 <h2 className="text-white font-black text-[10px] sm:text-xs uppercase tracking-widest">EFETUAR NOVO REGISTRO ADMINISTRATIVO</h2>
@@ -720,13 +874,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                       <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">CATEGORIA DA MEDIDA</label>
                       <select
                         value={classification}
-                        onChange={e => setClassification(e.target.value)}
+                        onChange={e => {
+                          setClassification(e.target.value);
+                          if (e.target.value === CATEGORIA_AFASTAMENTO) setNivel('III');
+                        }}
                         className="h-12 sm:h-14 border border-gray-200 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer w-full"
                       >
                         <option value="">Selecione...</option>
-                        <option value="OCORRÊNCIA DISCIPLINAR">OCORRÊNCIA DISCIPLINAR</option>
-                        <option value="OCORRÊNCIA PEDAGÓGICA">OCORRÊNCIA PEDAGÓGICA</option>
-                        <option value="MEDIDA EDUCATIVA">MEDIDA EDUCATIVA</option>
+                        {CATEGORIAS_GESTAO.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                   </div>
@@ -743,19 +898,115 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                       />
                     </div>
 
-                    {classification === 'MEDIDA EDUCATIVA' && (
-                      <div className="flex flex-col gap-2 cursor-pointer animate-fade-in" onClick={() => triggerPicker(retDateRef)}>
-                        <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1 cursor-pointer">DATA DE RETORNO (PÓS-MEDIDA)</label>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">DATA DE CIÊNCIA PELA ESCOLA <span className="normal-case font-bold text-white/50">(Art. 9º, §3º)</span></label>
+                      <input
+                        type="date"
+                        value={dataCiencia || registerDate}
+                        onChange={e => setDataCiencia(e.target.value)}
+                        className="h-12 sm:h-14 border border-gray-200 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm w-full cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* ── Resolução SEDUC 68/2026: gradação e registro ── */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">NÍVEL DA SITUAÇÃO <span className="normal-case font-bold text-white/50">(Art. 5º — Res. SEDUC 68/2026)</span></label>
+                      <select
+                        value={nivel}
+                        onChange={e => setNivel(e.target.value as NivelResolucao68 | '')}
+                        disabled={classification === CATEGORIA_AFASTAMENTO}
+                        className="h-12 sm:h-14 border border-gray-200 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm w-full cursor-pointer disabled:opacity-80"
+                      >
+                        <option value="">Selecione...</option>
+                        {(Object.keys(NIVEIS) as NivelResolucao68[]).map(n => <option key={n} value={n}>{NIVEIS[n].titulo}</option>)}
+                      </select>
+                      {nivel && <p className="text-[9px] text-white/60 font-bold ml-1">{NIVEIS[nivel].descricao}</p>}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">PLATAFORMA CONVIVA <span className="normal-case font-bold text-white/50">(Art. 9º)</span></label>
+                      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                        <label className="flex items-start gap-2 text-[10px] font-bold text-white uppercase cursor-pointer items-center whitespace-nowrap">
+                          <input type="checkbox" checked={convivaRegistrado} onChange={e => setConvivaRegistrado(e.target.checked)} className="w-4 h-4" />
+                          Registrado no Conviva
+                        </label>
                         <input
-                          ref={retDateRef}
-                          type="date"
-                          value={returnDate}
-                          onChange={e => setReturnDate(e.target.value)}
-                          className="h-12 sm:h-14 border border-orange-300 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-orange-500 outline-none shadow-sm cursor-pointer w-full"
+                          type="text"
+                          value={convivaProtocolo}
+                          onChange={e => setConvivaProtocolo(e.target.value)}
+                          placeholder="Nº / protocolo (opcional)"
+                          disabled={!convivaRegistrado}
+                          className="h-12 sm:h-14 border border-gray-200 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm w-full disabled:opacity-50"
                         />
                       </div>
-                    )}
+                    </div>
                   </div>
+
+                  {classification === CATEGORIA_ESTUDO_DIRIGIDO && (
+                    <div className="p-4 rounded-2xl bg-white/10 border border-white/20 text-[10px] font-bold text-white space-y-1">
+                      <p>📘 Estratégia pedagógica intermediária (Arts. 7º, IX e 8º): o estudante realiza atividades orientadas em outro espaço, <u>sob supervisão de integrante da equipe gestora</u>, sem prejuízo de carga horária, avaliações e conteúdos. É vedado usá-la como castigo ou segregação.</p>
+                      {historicoAluno.estudosDirigidos > 0 && (
+                        <p className="text-orange-300">⚠ Este estudante já teve {historicoAluno.estudosDirigidos} estudo(s) dirigido(s) nos registros recentes. Estratégia reiterada deve ser registrada, comunicada à família e integrada ao plano individual de acompanhamento (Art. 7º, §5º).</p>
+                      )}
+                    </div>
+                  )}
+
+                  {classification === CATEGORIA_AFASTAMENTO && (
+                    <div className="p-5 sm:p-6 rounded-[28px] bg-red-950/40 border-2 border-red-400/60 space-y-5">
+                      <div>
+                        <h3 className="text-[11px] font-black text-red-200 uppercase tracking-widest">Afastamento preventivo temporário — Arts. 11 e 12</h3>
+                        <p className="text-[9px] font-bold text-white/70 mt-1">Medida cautelar, excepcional e protetiva — não é punição. Preserva a matrícula e o acompanhamento pedagógico. Vedado com base em receios genéricos, percepções não documentadas ou pressão informal (Art. 5º, §3º).</p>
+                      </div>
+
+                      {classRoom.toUpperCase().startsWith('AEE') && (
+                        <p className="p-3 rounded-xl bg-yellow-100 text-yellow-900 text-[10px] font-bold">⚠ Estudante da Educação Especial: antes de propor o afastamento, documente as adaptações razoáveis, os apoios especializados e as estratégias inclusivas adotadas, salvo risco imediato fundamentado (Art. 31).</p>
+                      )}
+
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">HIPÓTESE (Art. 11, §1º)</label>
+                        <select value={afHipotese} onChange={e => setAfHipotese(e.target.value as HipoteseAfastamento | '')} className="h-12 sm:h-14 border border-gray-200 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm w-full cursor-pointer">
+                          <option value="">Selecione...</option>
+                          {(Object.keys(HIPOTESES_AFASTAMENTO) as HipoteseAfastamento[]).map(h => <option key={h} value={h}>{HIPOTESES_AFASTAMENTO[h]}</option>)}
+                        </select>
+                        {afHipotese === 'recorrencia_grave' && historicoAluno.comIntervencao === 0 && (
+                          <p className="text-[9px] font-bold text-orange-300 ml-1">⚠ Não há intervenções da gestão nos registros recentes deste estudante. Esta hipótese exige registro documental de estratégias anteriores e de sua insuficiência (Art. 3º, XIV). Consulte o Histórico Permanente.</p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">MOTIVAÇÃO EXPRESSA E ELEMENTOS OBJETIVOS DO RISCO</label>
+                        <textarea rows={3} value={afMotivacao} onChange={e => setAfMotivacao(e.target.value)} className="w-full p-4 border border-gray-200 rounded-2xl text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-red-400 outline-none shadow-sm uppercase placeholder:text-gray-300" placeholder="Fatos concretos e documentados que demonstram o risco..." />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">DIAS LETIVOS (MÁX. {MAX_DIAS_AFASTAMENTO} — Art. 11, §5º)</label>
+                          <input type="number" min={1} max={MAX_DIAS_AFASTAMENTO} value={afDias}
+                            onChange={e => setAfDias(Math.min(MAX_DIAS_AFASTAMENTO, Math.max(1, Number(e.target.value) || 1)))}
+                            className="h-12 sm:h-14 border border-gray-200 rounded-2xl px-5 text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm w-full" />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">PERÍODO (A PARTIR DA DATA DO REGISTRO)</label>
+                          <div className="h-12 sm:h-14 flex items-center px-5 bg-white/20 rounded-2xl font-black text-white text-[11px] border border-white/20">
+                            {formatBR(ultimoDiaLetivo(registerDate, 1))} a {formatBR(ultimoDiaLetivo(registerDate, afDias))} · retorno {formatBR(proximoDiaLetivo(ultimoDiaLetivo(registerDate, afDias)))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">PLANO DE ESTUDOS DURANTE O AFASTAMENTO (Art. 11, §3º)</label>
+                        <textarea rows={2} value={afPlano} onChange={e => setAfPlano(e.target.value)} className="w-full p-4 border border-gray-200 rounded-2xl text-xs font-bold !text-black bg-white focus:ring-2 focus:ring-red-400 outline-none shadow-sm uppercase placeholder:text-gray-300" placeholder="Atividades orientadas, plataformas, entrega e acompanhamento..." />
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">COMUNICAÇÃO IMEDIATA (Art. 12)</label>
+                        <label className="flex items-start gap-2 text-[10px] font-bold text-white uppercase cursor-pointer"><input type="checkbox" checked={afFamilia} onChange={e => setAfFamilia(e.target.checked)} className="w-4 h-4 mt-0.5" /> Família / responsáveis comunicados formalmente (com canais de manifestação — Art. 12, §§1º e 3º)</label>
+                        <label className="flex items-start gap-2 text-[10px] font-bold text-white uppercase cursor-pointer"><input type="checkbox" checked={afURE} onChange={e => setAfURE(e.target.checked)} className="w-4 h-4 mt-0.5" /> URE comunicada</label>
+                        <label className="flex items-start gap-2 text-[10px] font-bold text-white uppercase cursor-pointer"><input type="checkbox" checked={afRede} onChange={e => setAfRede(e.target.checked)} className="w-4 h-4 mt-0.5" /> Rede protetiva / órgãos competentes comunicados (quando a situação exigir)</label>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex flex-col gap-2">
                     <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1">DESCRIÇÃO</label>
@@ -884,7 +1135,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                         <p className="text-[9px] font-bold text-gray-400">RA: {inc.ra}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${inc.category === 'MEDIDA EDUCATIVA' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{inc.category}</span>
+                        <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${isCategoriaRestritiva(inc.category) ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{inc.category}</span>
+                        {inc.resolucao68?.nivel && <span className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase bg-gray-800 text-white">Nível {inc.resolucao68.nivel}</span>}
                         <span className="text-[9px] font-bold text-gray-500 uppercase">{inc.professorName}</span>
                       </div>
                       <p className="text-[9px] text-gray-600 italic leading-snug">{inc.description}</p>
@@ -960,7 +1212,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                           </div>
                         </td>
                         <td className="p-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${inc.category === 'MEDIDA EDUCATIVA' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{inc.category}</span>
+                          <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${isCategoriaRestritiva(inc.category) ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{inc.category}</span>
+                          {inc.resolucao68?.nivel && <span className="ml-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase bg-gray-800 text-white">Nível {inc.resolucao68.nivel}</span>}
                         </td>
                         <td className="p-4 text-center">
                           <button onClick={() => onDelete(inc.id)} className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm" title="Excluir registro">
@@ -987,6 +1240,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
 
         {activeTab === 'estatisticas' && (
           <div className="animate-fade-in space-y-8 pb-10">
+            {/* ── Indicadores de monitoramento — Res. SEDUC 68/2026, Art. 9º, §4º ── */}
+            {(() => {
+              const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 100) : 0;
+              const tiles: { label: string; valor: string; detalhe: string; cor: string }[] = [
+                { label: 'Reincidência', valor: `${pct(indicadores.reincidentes, indicadores.alunos)}%`, detalhe: `${indicadores.reincidentes} de ${indicadores.alunos} estudantes com 2+ registros`, cor: 'border-orange-500' },
+                { label: 'Situações resolvidas', valor: `${indicadores.resolvidas}`, detalhe: `${pct(indicadores.resolvidas, indicadores.total)}% de ${indicadores.total} registros`, cor: 'border-teal-500' },
+                { label: 'Intervenções pedagógicas', valor: `${indicadores.totalIntervencoes}`, detalhe: `${indicadores.porIntervencao.length} tipos diferentes`, cor: 'border-blue-500' },
+                { label: 'Articulações c/ rede protetiva', valor: `${indicadores.rede}`, detalhe: 'Encaminhamentos à Rede Protetiva', cor: 'border-purple-500' },
+                { label: 'Estudos dirigidos', valor: `${indicadores.estudos}`, detalhe: 'Art. 7º, IX', cor: 'border-indigo-500' },
+                { label: 'Afastamentos preventivos', valor: `${indicadores.afast}`, detalhe: indicadores.afastVencidos > 0 ? `${indicadores.afastVencidos} com prazo vencido` : 'Nenhum prazo vencido', cor: 'border-red-500' },
+                { label: 'Registrados no Conviva', valor: `${pct(indicadores.conviva, indicadores.total)}%`, detalhe: `${indicadores.conviva} de ${indicadores.total} registros`, cor: 'border-green-600' },
+                { label: 'Por nível (I / II / III)', valor: `${indicadores.porNivel.I} / ${indicadores.porNivel.II} / ${indicadores.porNivel.III}`, detalhe: `${indicadores.porNivel['—']} sem classificação`, cor: 'border-gray-700' },
+              ];
+              return (
+                <div className="bg-white rounded-[40px] shadow-2xl overflow-hidden border border-white/10">
+                  <div className="bg-gradient-to-r from-black to-blue-900 p-6 text-center border-b-4 border-teal-500">
+                    <h3 className="text-white font-black text-xs uppercase tracking-widest">📈 Indicadores de Convivência — Res. SEDUC 68/2026</h3>
+                    <p className="text-teal-400 text-[9px] font-bold mt-1 uppercase">Art. 9º, §4º · base: registros carregados (últimos 30 dias)</p>
+                  </div>
+                  <div className="p-6 sm:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {tiles.map(t => (
+                      <div key={t.label} className={`p-4 bg-gray-50 rounded-2xl border-l-8 ${t.cor}`}>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t.label}</p>
+                        <p className="text-2xl font-black text-[#002b5c] mt-1">{t.valor}</p>
+                        <p className="text-[9px] font-bold text-gray-500 uppercase mt-1">{t.detalhe}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {indicadores.porIntervencao.length > 0 && (
+                    <div className="px-6 sm:px-8 pb-8 space-y-2">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Número e tipo de intervenções adotadas</p>
+                      {indicadores.porIntervencao.map(([tipo, n]) => (
+                        <div key={tipo} className="flex items-center gap-3">
+                          <span className="text-[9px] font-black text-[#002b5c] uppercase w-48 sm:w-80 truncate" title={tipo}>{tipo}</span>
+                          <div className="flex-1 bg-gray-200 h-2 rounded-full overflow-hidden">
+                            <div className="bg-blue-500 h-full" style={{ width: `${pct(n, indicadores.porIntervencao[0][1])}%` }} />
+                          </div>
+                          <span className="text-[10px] font-black text-blue-600 w-6 text-right">{n}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Dashboard Estatístico */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Card Top Turmas */}
@@ -1122,14 +1421,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
             {/* Guia de Medidas Pedagógicas */}
             <div className="bg-white rounded-[40px] shadow-2xl overflow-hidden border border-white/10">
               <div className="bg-gradient-to-r from-black to-blue-900 p-8 text-center border-b-4 border-teal-500">
-                <h2 className="text-white font-black text-sm uppercase tracking-widest">📚 Guia Estratégico de Medidas Pedagógicas</h2>
-                <p className="text-teal-400 text-[10px] font-bold mt-2 uppercase">Ações sugeridas conforme o Regimento Escolar e tipo de ocorrência</p>
+                <h2 className="text-white font-black text-sm uppercase tracking-widest">📚 Guia de Respostas Institucionais</h2>
+                <p className="text-teal-400 text-[10px] font-bold mt-2 uppercase">Gradação do Art. 5º da Resolução SEDUC nº 68/2026 e Protocolo 179</p>
               </div>
               <div className="p-10 grid grid-cols-1 md:grid-cols-3 gap-10">
                 {Object.entries(pedagogicalGuide).map(([type, measures]) => (
                   <div key={type} className="space-y-6">
                     <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${type.includes('DISCIPLINAR') ? 'bg-red-500' : type.includes('PEDAGÓGICA') ? 'bg-blue-500' : 'bg-teal-500'} animate-pulse`}></div>
+                      <div className={`w-3 h-3 rounded-full ${type.startsWith('Nível III') ? 'bg-red-500' : type.startsWith('Nível II') ? 'bg-orange-500' : 'bg-teal-500'} animate-pulse`}></div>
                       <h4 className="text-[12px] font-black text-[#002b5c] uppercase tracking-tighter">{type}</h4>
                     </div>
                     <ul className="space-y-4">
@@ -1144,7 +1443,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                 ))}
               </div>
               <div className="bg-gray-50 p-6 text-center border-t border-gray-100 italic text-[10px] font-bold text-gray-400 uppercase">
-                * Estas medidas são sugestões e devem ser validadas pela coordenação de acordo com a gravidade e reincidência do caso.
+                * As intervenções não são respostas automáticas: definem-se pela análise contextualizada (Art. 7º, §1º). É vedado o caráter exclusivamente punitivo, a exposição pública do estudante e o uso de afastamento ou transferência como castigo (Arts. 1º, §1º e 28).
               </div>
             </div>
           </div>
@@ -1177,15 +1476,107 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                 </select>
               </div>
 
+              {/* ── RESOLUÇÃO SEDUC 68/2026 ─────────────────────────────── */}
+              <div className="space-y-4 p-4 rounded-2xl border-2 border-blue-100 bg-blue-50/40">
+                <p className="text-[10px] font-black text-blue-900 uppercase tracking-widest">Registro e gradação — Res. SEDUC 68/2026</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Nível (Art. 5º)</label>
+                    <select value={r68Edit.nivel || ''} onChange={e => upR68({ nivel: (e.target.value || undefined) as NivelResolucao68 | undefined })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black">
+                      <option value="">Não classificado</option>
+                      {(Object.keys(NIVEIS) as NivelResolucao68[]).map(n => <option key={n} value={n}>{NIVEIS[n].titulo}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Data de ciência (Art. 9º, §3º)</label>
+                    <input type="date" value={r68Edit.dataCiencia || ''} onChange={e => upR68({ dataCiencia: e.target.value || undefined })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Família comunicada em</label>
+                    <input type="date" value={r68Edit.familiaComunicadaEm || ''} onChange={e => upR68({ familiaComunicadaEm: e.target.value || undefined })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Plataforma Conviva (Art. 9º)</label>
+                    <div className="flex gap-2 items-center">
+                      <label className="flex items-start gap-2 text-[10px] font-bold text-gray-700 uppercase cursor-pointer items-center whitespace-nowrap">
+                        <input type="checkbox" checked={!!r68Edit.conviva?.registrado} onChange={e => upR68({ conviva: { ...r68Edit.conviva, registrado: e.target.checked } })} className="w-4 h-4" />
+                        Registrado
+                      </label>
+                      <input type="text" placeholder="Nº / protocolo" value={r68Edit.conviva?.protocolo || ''} disabled={!r68Edit.conviva?.registrado}
+                        onChange={e => upR68({ conviva: { registrado: true, protocolo: e.target.value || undefined } })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black disabled:opacity-50" />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Manifestação do estudante (Art. 3º, V)</label>
+                  <textarea rows={2} value={r68Edit.manifestacaoEstudante || ''} onChange={e => upR68({ manifestacaoEstudante: e.target.value.toUpperCase() || undefined })}
+                    placeholder="Versão do estudante sobre os fatos, colhida em ambiente adequado..." className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-bold outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black uppercase" />
+                </div>
+
+                {r68Edit.afastamento && (() => {
+                  const af = r68Edit.afastamento;
+                  const sit = situacaoAfastamento(af);
+                  return (
+                    <div className="space-y-3 p-4 rounded-2xl border-2 border-red-200 bg-red-50">
+                      <p className="text-[10px] font-black text-red-800 uppercase tracking-widest">Afastamento preventivo temporário</p>
+                      <p className="text-[10px] font-bold text-gray-700">{HIPOTESES_AFASTAMENTO[af.hipotese]}</p>
+                      <p className="text-[10px] font-bold text-gray-700 uppercase">
+                        Início {formatBR(af.inicio)} · {af.diasLetivos} dia(s) letivo(s){af.prorrogacao ? ` + ${af.prorrogacao.diasLetivos} de prorrogação` : ''} · até {formatBR(sit.fim)} · retorno previsto {formatBR(sit.retornoPrevisto)}
+                      </p>
+                      {sit.vencido && <p className="text-[10px] font-black text-red-700 uppercase">⚠ Prazo encerrado: registre o retorno ou uma prorrogação deliberada (Art. 11, §8º).</p>}
+
+                      {!af.prorrogacao ? (
+                        <button type="button" onClick={() => upAf({ prorrogacao: { dataConselho: '', diasLetivos: 1, fundamentacao: '', familiaComunicada: false } })}
+                          className="text-[9px] font-black text-red-700 uppercase underline">+ Registrar prorrogação (Conselho de Escola)</button>
+                      ) : (
+                        <div className="space-y-2 p-3 bg-white rounded-xl border border-red-200">
+                          <p className="text-[9px] font-black text-red-800 uppercase">Prorrogação — Art. 11, §§6º e 7º</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Data da apreciação pelo Conselho</label>
+                              <input type="date" value={af.prorrogacao.dataConselho} onChange={e => upAf({ prorrogacao: { ...af.prorrogacao!, dataConselho: e.target.value } })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Dias letivos (máx. {MAX_DIAS_AFASTAMENTO})</label>
+                              <input type="number" min={1} max={MAX_DIAS_AFASTAMENTO} value={af.prorrogacao.diasLetivos}
+                                onChange={e => upAf({ prorrogacao: { ...af.prorrogacao!, diasLetivos: Math.min(MAX_DIAS_AFASTAMENTO, Math.max(1, Number(e.target.value) || 1)) } })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black" />
+                            </div>
+                          </div>
+                          <textarea rows={2} value={af.prorrogacao.fundamentacao} onChange={e => upAf({ prorrogacao: { ...af.prorrogacao!, fundamentacao: e.target.value.toUpperCase() } })}
+                            placeholder="Reavaliação formal e fundamentada da Direção..." className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-bold outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black uppercase" />
+                          <label className="flex items-start gap-2 text-[10px] font-bold text-gray-700 uppercase cursor-pointer">
+                            <input type="checkbox" checked={af.prorrogacao.familiaComunicada} onChange={e => upAf({ prorrogacao: { ...af.prorrogacao!, familiaComunicada: e.target.checked } })} className="w-4 h-4 mt-0.5" />
+                            Família comunicada formalmente da prorrogação
+                          </label>
+                          <button type="button" onClick={() => upAf({ prorrogacao: undefined })} className="text-[9px] font-black text-gray-500 uppercase underline">Remover prorrogação</button>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Retorno às atividades presenciais em</label>
+                        <input type="date" value={af.retornoEm || ''} onChange={e => upAf({ retornoEm: e.target.value || undefined })} className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-[11px] font-black outline-none focus:ring-2 focus:ring-teal-500 transition-all text-black" />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* ── ENCAMINHAMENTOS DA GESTÃO ───────────────────────────── */}
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">
-                  Encaminhamentos da Gestão
+                  Intervenções / Encaminhamentos da Gestão (Art. 7º)
                 </label>
                 <p className="text-[9px] text-gray-400 ml-2 -mt-2">Clique em cada encaminhamento para descrever a intervenção realizada</p>
 
                 <div className="flex flex-col gap-2">
-                  {LISTA_ENCAMINHAMENTOS_GESTAO.map(({ label: tipo, popUp, grupo }, idx, arr) => {
+                  {[
+                    ...LISTA_ENCAMINHAMENTOS_GESTAO.filter(l => l.grupo !== 'especial'),
+                    // Encaminhamentos antigos (anteriores à Res. 68) continuam visíveis para não serem perdidos
+                    ...selectedMgmtReferrals
+                      .filter(t => !LISTA_ENCAMINHAMENTOS_GESTAO.some(l => l.label === t))
+                      .map(t => ({ label: t, popUp: true, grupo: undefined as string | undefined })),
+                    ...LISTA_ENCAMINHAMENTOS_GESTAO.filter(l => l.grupo === 'especial'),
+                  ].map(({ label: tipo, popUp, grupo }, idx, arr) => {
                     const marcado = selectedMgmtReferrals.includes(tipo);
                     const showSeparator = grupo === 'especial' && (idx === 0 || arr[idx - 1].grupo !== 'especial');
                     const isEspecial = grupo === 'especial';
@@ -1383,12 +1774,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, incidents, students, classe
                         <h4 className="text-orange-800 font-black text-xs uppercase tracking-wider">{selectedStudentForHistory.nome}</h4>
                         <p className="text-orange-600/60 text-[9px] font-bold uppercase">RA: {selectedStudentForHistory.ra} | TURMA: {selectedStudentForHistory.turma}</p>
                       </div>
-                      <button
-                        onClick={() => setSelectedStudentForHistory(null)}
-                        className="text-[9px] font-black text-orange-600 uppercase hover:underline"
-                      >
-                        Trocar Aluno
-                      </button>
+                      <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <button
+                          onClick={() => generateRelatorioCircunstanciado(selectedStudentForHistory, studentHistory, { responsavel: professorName, acao: 'view' })}
+                          disabled={studentHistory.length === 0}
+                          className="px-4 py-2 bg-[#002b5c] text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg disabled:opacity-40"
+                          title="Relatório circunstanciado — Art. 15 da Res. SEDUC 68/2026"
+                        >
+                          📄 Relatório Circunstanciado
+                        </button>
+                        <button
+                          onClick={() => setSelectedStudentForHistory(null)}
+                          className="text-[9px] font-black text-orange-600 uppercase hover:underline"
+                        >
+                          Trocar Aluno
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-4">

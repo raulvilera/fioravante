@@ -1,5 +1,9 @@
 import { jsPDF } from "jspdf";
-import type { Incident } from "../types";
+import type { Incident, Student } from "../types";
+import {
+  LISTA_INTERVENCOES, HIPOTESES_AFASTAMENTO, NIVEIS, situacaoAfastamento, formatBR, incidentISODate,
+  ENC_REDE_PROTETIVA, ENC_ESTUDO_DIRIGIDO, CATEGORIA_ESTUDO_DIRIGIDO,
+} from "../data/resolucao68";
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 
 // ── Brasão do Estado de São Paulo (Supabase Storage) ─────────────────────────
@@ -172,6 +176,24 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
     }
   }
 
+  // Afastamento preventivo temporário — conteúdo mínimo da comunicação à família (Art. 12, §1º)
+  const afItems: Array<{ bold: boolean; text: string }> = [];
+  const af = inc.resolucao68?.afastamento;
+  if (af) {
+    const sit = situacaoAfastamento(af);
+    afItems.push({ bold: true, text: "Afastamento preventivo temporário (Res. SEDUC 68/2026, Arts. 11 e 12):" });
+    afItems.push({ bold: false, text: `Motivo: ${af.motivacao}` });
+    afItems.push({ bold: false, text:
+      `Medida cautelar, excepcional e temporária, que não constitui punição: de ${formatBR(af.inicio)} a ${formatBR(sit.fim)} ` +
+      `(${af.diasLetivos + (af.prorrogacao?.diasLetivos || 0)} dia(s) letivo(s)), com retorno previsto em ${formatBR(sit.retornoPrevisto)}. A matrícula fica preservada.` });
+    afItems.push({ bold: false, text: `Continuidade das atividades pedagógicas: ${af.planoEstudos}` });
+    afItems.push({ bold: false, text:
+      "Próximos procedimentos: acompanhamento pela equipe gestora e pela URE e retorno com plano de acompanhamento, " +
+      "salvo deliberação fundamentada do Conselho de Escola." });
+    afItems.push({ bold: false, text:
+      "Manifestação: o(a) estudante e a família podem se manifestar sobre a medida, por escrito ou pessoalmente, junto à Direção da escola." });
+  }
+
   const feedbackTxt = inc.managementFeedback ? inc.managementFeedback.toUpperCase() : "";
   const sFeedback   = feedbackTxt ? doc.splitTextToSize(feedbackTxt, CW - 6) : [];
 
@@ -187,14 +209,19 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
     for (const it of gestaoItems) extraH += doc.splitTextToSize(it.text, CW - 8).length * LH;
   }
   if (sFeedback.length > 0) { extraH += LH + 6; extraH += sFeedback.length * LH + 3; }
+  if (afItems.length > 0) {
+    extraH += 6;
+    for (const it of afItems) extraH += doc.splitTextToSize(it.text, CW - 8).length * LH;
+  }
   const boxHIdeal = Math.max(30, sDesc.length * LH + extraH + 10);
 
   // ── Calcular espaço disponível abaixo da caixa ────────────────────────
   // Espaço fixo mínimo necessário abaixo da caixa:
-  const OPTS_COUNT  = 9;
+  const OPTS = LISTA_INTERVENCOES.filter(o => o.grupo !== "especial");
+  const OPTS_COUNT  = Math.ceil(OPTS.length / 2);   // duas colunas
   const cbSpacingNormal = 5.5;
   const checkboxesH = 5 + OPTS_COUNT * cbSpacingNormal;
-  const institucH   = 3 + 3 * LH + 4 + LH;   // texto final + "Contamos..."
+  const institucH   = 3 + 4 * LH + 4 + LH;   // texto final + "Contamos..."
   const signaturesH = 22;                      // assinaturas mínimas
   const gapBoxCb    = 6;                       // espaço entre caixa e checkboxes
   const fixedBelowH = gapBoxCb + checkboxesH + institucH + signaturesH;
@@ -277,6 +304,26 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
     doc.setTextColor(0, 0, 0);
   }
 
+  // Afastamento preventivo temporário
+  if (afItems.length > 0 && bY < innerMaxY) {
+    bY += 3;
+    doc.setDrawColor(160, 160, 160); doc.setLineWidth(0.2);
+    doc.setLineDashPattern([1, 1], 0);
+    doc.line(ML + 3, bY, ML + CW - 3, bY);
+    doc.setLineDashPattern([], 0);
+    bY += 4;
+    for (const it of afItems) {
+      if (bY >= innerMaxY) break;
+      doc.setFont("helvetica", it.bold ? "bold" : "normal");
+      doc.setFontSize(it.bold ? boxFontSize : boxFontSize - 0.2);
+      doc.setTextColor(it.bold ? 140 : 0, 0, 0);
+      const s = doc.splitTextToSize(it.text, CW - 8);
+      doc.text(s, ML + 3, bY);
+      bY += s.length * scaleLH;
+    }
+    doc.setTextColor(0, 0, 0);
+  }
+
   // Retorno da Gestão
   if (sFeedback.length > 0 && bY < innerMaxY) {
     bY += 3;
@@ -315,31 +362,25 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
   const mgmtSet   = new Set((inc.managementReferrals || []).map(r => r.type.toLowerCase()));
   const profTypes = profRefs.map(r => r.type);
 
-  const OPTS = [
-    "Orientação individual com o estudante",
-    "Mediação de conflito realizada pela equipe gestora/POC",
-    "Necessidade de acompanhamento e diálogo em casa sobre o ocorrido",
-    "Convocação dos responsáveis para uma reunião presencial",
-    "Recorrência / medidas educativas",
-    "Orientação ao professor",
-    "Encaminhamento à Rede Protetiva",
-    "Busca ativa",
-    "Outros",
-  ];
-
   // Comprimir espaçamento dos checkboxes se necessário
   const spaceLeft = PH - 12 - y;
-  const neededBelow = OPTS.length * cbSpacingNormal + institucH + signaturesH;
+  const neededBelow = OPTS_COUNT * cbSpacingNormal + institucH + signaturesH;
   const cbSpacing = spaceLeft < neededBelow
     ? Math.max(4.2, cbSpacingNormal * (spaceLeft / neededBelow))
     : cbSpacingNormal;
 
   doc.setFont("helvetica", "normal"); doc.setFontSize(9);
 
-  for (const opt of OPTS) {
-    const ol = opt.toLowerCase();
+  const colW = CW / 2;
+  const yStart = y;
+  for (let idx = 0; idx < OPTS.length; idx++) {
+    const optItem = OPTS[idx];
+    const ol = optItem.label.toLowerCase();
+    const colX = ML + (idx < OPTS_COUNT ? 0 : colW);
+    y = yStart + (idx % OPTS_COUNT) * cbSpacing;
     const checked =
       mgmtSet.has(ol) ||
+      (inc.category === CATEGORIA_ESTUDO_DIRIGIDO && optItem.label === ENC_ESTUDO_DIRIGIDO) ||
       (profTypes.includes("orientacao_individual") && ol.startsWith("orientação individual")) ||
       (profTypes.includes("encaminhamento_gestao") && ol.includes("mediação de conflito"))   ||
       (profTypes.includes("busca_ativa")           && ol === "busca ativa")                  ||
@@ -347,7 +388,7 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
       (inc.referralType === "encaminhamento_gestao" && ol.includes("mediação de conflito"))   ||
       (inc.referralType === "busca_ativa"           && ol === "busca ativa");
 
-    const bx = ML + 4, by = y - 3.2, bs = 3.4;
+    const bx = colX + 2, by = y - 3.2, bs = 3.4;
     doc.setDrawColor(60, 60, 60); doc.setLineWidth(0.3);
     doc.rect(bx, by, bs, bs);
     if (checked) {
@@ -355,9 +396,9 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
       doc.text("X", bx + 0.6, by + 2.9);
     }
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
-    doc.text(opt, ML + 10, y);
-    y += cbSpacing;
+    doc.text(optItem.pdf, colX + 8, y);
   }
+  y = yStart + OPTS_COUNT * cbSpacing;
 
   // ── Texto institucional ───────────────────────────────────────────────
   y += 3;
@@ -366,7 +407,8 @@ const buildPDF = async (inc: Incident): Promise<jsPDF> => {
     "Reforçamos que a escola é um espaço de convivência democrática. Atitudes que divergem do " +
     "Regimento Escolar são tratadas como oportunidades de aprendizado e correção de rota. " +
     "O respeito mútuo e o cumprimento das normas são essenciais para que o direito à educação " +
-    "de todos seja preservado";
+    "de todos seja preservado. Fica assegurada ao(à) estudante e à família a oportunidade de " +
+    "manifestação junto à Direção da escola (Res. SEDUC nº 68/2026).";
   const sF1 = doc.splitTextToSize(final1, CW);
   doc.text(sF1, ML, y, { align: "justify", maxWidth: CW });
   y += sF1.length * LH + 4;
@@ -432,5 +474,210 @@ export const uploadPDFToStorage = async (incident: Incident): Promise<string | n
   } catch (err) {
     console.error("Erro ao gerar/enviar PDF:", err);
     return null;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Relatório circunstanciado — Res. SEDUC nº 68/2026, Art. 15
+// Reúne o histórico do estudante em ordem cronológica e deixa em branco os
+// campos que dependem de análise da Direção (risco, justificativa, proposta).
+// ─────────────────────────────────────────────────────────────────────────────
+export const generateRelatorioCircunstanciado = async (
+  student: Student,
+  incidents: Incident[],
+  opts: { responsavel?: string; acao?: "view" | "download" } = {}
+): Promise<void> => {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const PW = doc.internal.pageSize.getWidth();
+  const PH = doc.internal.pageSize.getHeight();
+  const ML = 18;
+  const CW = PW - 2 * ML;
+  const LH = 4.6;
+  let y = 13;
+
+  const ensure = (h: number) => {
+    if (y + h > PH - 15) { doc.addPage(); y = 18; }
+  };
+  const para = (text: string, o: { bold?: boolean; italic?: boolean; size?: number; indent?: number; gray?: boolean } = {}) => {
+    doc.setFont("helvetica", o.bold ? "bold" : o.italic ? "italic" : "normal");
+    doc.setFontSize(o.size ?? 9.3);
+    if (o.gray) doc.setTextColor(90, 90, 90); else doc.setTextColor(0, 0, 0);
+    const indent = o.indent ?? 0;
+    for (const line of doc.splitTextToSize(text, CW - indent) as string[]) {
+      ensure(LH);
+      doc.text(line, ML + indent, y);
+      y += LH;
+    }
+  };
+  const secao = (titulo: string) => {
+    y += 3;
+    ensure(12);
+    doc.setFillColor(228, 235, 245);
+    doc.rect(ML, y - 4, CW, 6, "F");
+    para(titulo, { bold: true });
+    y += 1.5;
+  };
+  const linhasEmBranco = (n: number) => {
+    doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.2);
+    for (let i = 0; i < n; i++) { ensure(7); y += 6; doc.line(ML, y, ML + CW, y); }
+    y += 4;
+  };
+
+  // ── Cabeçalho ─────────────────────────────────────────────────────────
+  try {
+    const logo = await loadImage(LOGO_URL);
+    doc.addImage(logo.data, "PNG", 14, 10, 20, (logo.h / logo.w) * 20);
+  } catch { /* brasão é opcional */ }
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(0, 0, 0);
+  for (const l of [
+    "GOVERNO DO ESTADO DE SÃO PAULO",
+    "SECRETARIA DE ESTADO DA EDUCAÇÃO",
+    "UNIDADE REGIONAL DE ENSINO GUARULHOS NORTE",
+    "E.E. FIORAVANTE IERVOLINO – UA: 46.293 – CIE 037515",
+  ]) { doc.text(l, PW / 2 + 7, y, { align: "center" }); y += 3.8; }
+  y += 6;
+  doc.setLineWidth(0.3); doc.line(ML, y, PW - ML, y); y += 7;
+  doc.setFontSize(12);
+  doc.text("RELATÓRIO CIRCUNSTANCIADO", PW / 2, y, { align: "center" }); y += 5;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  doc.text("Resolução SEDUC nº 68/2026, Art. 15 — DOCUMENTO RESERVADO", PW / 2, y, { align: "center" }); y += 6;
+
+  const ordenados = [...incidents].sort((a, b) => incidentISODate(a).localeCompare(incidentISODate(b)));
+  const hoje = new Date().toLocaleDateString("pt-BR");
+
+  // I — Identificação da unidade escolar e da equipe responsável
+  secao("I – Identificação da unidade escolar e da equipe responsável");
+  para("E.E. Fioravante Iervolino – URE Guarulhos Norte.");
+  para(`Responsável pela elaboração: ${opts.responsavel || "________________________________"}    Data: ${hoje}`);
+
+  // II — Identificação do estudante
+  secao("II – Identificação do estudante");
+  para(`Nome: ${student.nome}    RA: ${student.ra}    Turma: ${student.turma}`);
+  para("Informações pessoais preservadas: uso restrito à instrução do procedimento.", { italic: true, gray: true, size: 8.5 });
+
+  // III — Descrição objetiva e cronológica dos fatos
+  secao("III – Descrição objetiva e cronológica dos fatos");
+  if (ordenados.length === 0) para("Nenhum registro localizado.");
+  for (const inc of ordenados) {
+    const r = inc.resolucao68;
+    const cab = [
+      inc.registerDate || inc.date,
+      inc.category || "REGISTRO",
+      r?.nivel ? `Nível ${r.nivel}` : "",
+      `Registrado por: ${inc.professorName || "---"}`,
+    ].filter(Boolean).join(" — ");
+    para(cab, { bold: true });
+    if (r?.dataCiencia) para(`Ciência pela escola em ${formatBR(r.dataCiencia)}.`, { indent: 4, gray: true, size: 8.5 });
+    if (inc.irregularities && inc.irregularities !== "NENHUMA") para(`Irregularidades: ${inc.irregularities}`, { indent: 4 });
+    para(inc.description || "", { indent: 4 });
+    if (r?.manifestacaoEstudante) para(`Manifestação do estudante: ${r.manifestacaoEstudante}`, { indent: 4, italic: true });
+    y += 1.5;
+  }
+
+  // IV — Análise da situação atual de risco
+  secao("IV – Análise da situação atual de risco");
+  const afastamentos = ordenados.filter(i => i.resolucao68?.afastamento);
+  for (const inc of afastamentos) {
+    const af = inc.resolucao68!.afastamento!;
+    para(`${formatBR(af.inicio)} – ${HIPOTESES_AFASTAMENTO[af.hipotese]}`, { bold: true });
+    para(af.motivacao, { indent: 4 });
+  }
+  para("Análise da Direção sobre o risco atual ao estudante, à comunidade escolar ou à convivência:", { gray: true, size: 8.5 });
+  linhasEmBranco(3);
+
+  // V — Registros na Plataforma Conviva
+  secao("V – Registros realizados na Plataforma Conviva");
+  const conviva = ordenados.filter(i => i.resolucao68?.conviva?.registrado);
+  if (conviva.length === 0) para("Nenhum registro no Conviva informado no sistema.");
+  for (const inc of conviva) {
+    para(`${inc.registerDate || inc.date} – ${inc.category || "registro"}${inc.resolucao68?.conviva?.protocolo ? ` – protocolo ${inc.resolucao68.conviva.protocolo}` : ""}`, { indent: 4 });
+  }
+  const semConviva = ordenados.length - conviva.length;
+  if (semConviva > 0) para(`${semConviva} registro(s) sem indicação de lançamento no Conviva.`, { gray: true, size: 8.5 });
+
+  // VI — Medidas adotadas
+  secao("VI – Medidas pedagógicas, restaurativas, mediadoras, protetivas e protocolares adotadas");
+  let medidas = 0;
+  for (const inc of ordenados) {
+    if (inc.category === CATEGORIA_ESTUDO_DIRIGIDO && !(inc.managementReferrals || []).some(r => r.type === ENC_ESTUDO_DIRIGIDO)) {
+      medidas++;
+      para(`${inc.registerDate || inc.date} – ${ENC_ESTUDO_DIRIGIDO} (Art. 7º, IX)`, { indent: 4 });
+    }
+    for (const mr of inc.managementReferrals || []) {
+      const info = LISTA_INTERVENCOES.find(l => l.label === mr.type);
+      if (info?.grupo === "especial") continue;
+      medidas++;
+      para(`${inc.registerDate || inc.date} – ${mr.type}${info?.artigo ? ` (${info.artigo})` : ""}`, { indent: 4 });
+      if (mr.description) para(mr.description, { indent: 8, gray: true, size: 8.5 });
+    }
+    const af = inc.resolucao68?.afastamento;
+    if (af) {
+      medidas++;
+      const sit = situacaoAfastamento(af);
+      para(`${formatBR(af.inicio)} – Afastamento preventivo temporário até ${formatBR(sit.fim)}${af.prorrogacao ? ` (prorrogado, Conselho em ${formatBR(af.prorrogacao.dataConselho)})` : ""}${af.retornoEm ? `; retorno em ${formatBR(af.retornoEm)}` : ""}`, { indent: 4 });
+      para(`Plano de estudos: ${af.planoEstudos}`, { indent: 8, gray: true, size: 8.5 });
+    }
+  }
+  if (medidas === 0) para("Nenhuma intervenção da gestão registrada no sistema.");
+
+  // VII — Comunicações à família
+  secao("VII – Comunicações realizadas à família ou aos responsáveis legais");
+  let comunicacoes = 0;
+  for (const inc of ordenados) {
+    const r = inc.resolucao68;
+    if (r?.familiaComunicadaEm) { comunicacoes++; para(`${formatBR(r.familiaComunicadaEm)} – comunicação referente ao registro de ${inc.registerDate || inc.date}`, { indent: 4 }); }
+    if (r?.afastamento?.comunicacaoFamilia) { comunicacoes++; para(`${formatBR(r.afastamento.inicio)} – comunicação formal do afastamento preventivo`, { indent: 4 }); }
+    if (r?.afastamento?.prorrogacao?.familiaComunicada) { comunicacoes++; para(`${formatBR(r.afastamento.prorrogacao.dataConselho)} – comunicação da prorrogação do afastamento`, { indent: 4 }); }
+    for (const mr of inc.managementReferrals || []) {
+      if (/respons[aá]veis|em casa/i.test(mr.type)) { comunicacoes++; para(`${inc.registerDate || inc.date} – ${mr.type}`, { indent: 4 }); }
+    }
+  }
+  if (comunicacoes === 0) para("Nenhuma comunicação à família registrada no sistema.");
+
+  // VIII — Reuniões, orientações, pactuações e planos
+  secao("VIII – Registros de reuniões, orientações, pactuações e planos de acompanhamento");
+  const devolutivas = ordenados.filter(i => i.managementFeedback);
+  if (devolutivas.length === 0) para("Sem devolutivas registradas.");
+  for (const inc of devolutivas) para(`${inc.registerDate || inc.date} – ${inc.managementFeedback}`, { indent: 4 });
+
+  // IX — Rede protetiva
+  secao("IX – Encaminhamentos à rede protetiva ou aos demais órgãos competentes");
+  const rede = ordenados.filter(i =>
+    (i.managementReferrals || []).some(r => r.type === ENC_REDE_PROTETIVA) || i.resolucao68?.afastamento?.comunicacaoRede);
+  if (rede.length === 0) para("Nenhum encaminhamento à rede protetiva registrado.");
+  for (const inc of rede) {
+    const mr = (inc.managementReferrals || []).find(r => r.type === ENC_REDE_PROTETIVA);
+    para(`${inc.registerDate || inc.date}${mr?.description ? ` – ${mr.description}` : " – comunicação à rede protetiva"}`, { indent: 4 });
+  }
+
+  // X a XII — preenchimento pela Direção
+  secao("X – Justificativa técnica para a eventual transferência cautelar");
+  linhasEmBranco(4);
+  secao("XI – Proposta preliminar de continuidade do acompanhamento pedagógico e protetivo");
+  linhasEmBranco(4);
+  secao("XII – Matrícula decorrente de decisão judicial");
+  para("(   ) Não      (   ) Sim – anexar cópia da ordem judicial ou documentos disponíveis (Art. 23).");
+
+  y += 4;
+  para(
+    "Conforme o Art. 15, §1º, este relatório evita juízos morais, expressões estigmatizantes, exposição indevida " +
+    "da vida privada do estudante e informações não verificadas. Documento de caráter reservado (Art. 18, §1º).",
+    { italic: true, gray: true, size: 8 }
+  );
+  para(`Níveis de referência: ${Object.values(NIVEIS).map(n => n.titulo).join("; ")}.`, { italic: true, gray: true, size: 7.5 });
+
+  // Assinatura
+  ensure(25);
+  y += 18;
+  doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
+  doc.line(PW / 2 - 45, y, PW / 2 + 45, y);
+  y += 4;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+  doc.text("Direção da Unidade Escolar", PW / 2, y, { align: "center" });
+
+  if (opts.acao === "download") {
+    doc.save(`RELATORIO_CIRCUNSTANCIADO_${student.nome.replace(/\s+/g, "_")}.pdf`);
+  } else {
+    window.open(doc.output("bloburl"), "_blank");
   }
 };

@@ -3,6 +3,7 @@ import type { Incident, User, Student, ProfessorReferral } from '../types';
 import StatusBadge from './StatusBadge';
 import { getProfessorNameFromEmail } from '../data/professorsData';
 import { generateIncidentPDF } from '../services/pdfService';
+import { isCategoriaRestritiva } from '../data/resolucao68';
 
 // ── Busca de Ocorrências (inline) ─────────────────────────────────────────────
 type SearchMode = 'turma' | 'aluno' | 'professor';
@@ -57,7 +58,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ incidents, students, c
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-black text-gray-400">{inc.date}</span>
                       <span className="bg-blue-100 text-blue-800 text-[9px] font-black px-2 py-0.5 rounded-full">{inc.classRoom}</span>
-                      {inc.category && <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase ${inc.category === 'MEDIDA EDUCATIVA' ? 'bg-red-100 text-red-600' : inc.category?.includes('ACIDENTE') || inc.category?.includes('INCIDENTE') ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>{inc.category}</span>}
+                      {inc.category && <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase ${isCategoriaRestritiva(inc.category) ? 'bg-red-100 text-red-600' : inc.category?.includes('ACIDENTE') || inc.category?.includes('INCIDENTE') ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>{inc.category}</span>}
                     </div>
                     <StatusBadge status={inc.status || 'Pendente'} size="small" />
                   </div>
