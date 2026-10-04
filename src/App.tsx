@@ -608,7 +608,10 @@ const App = () => {
     managementFeedback: i.management_feedback,
     managementFeedbackAt: i.management_feedback_at,
     managementFeedbackReadAt: i.management_feedback_read_at,
-    lastViewedAt: i.last_viewed_at
+    lastViewedAt: i.last_viewed_at,
+    professorReferrals: i.professor_referrals || undefined,
+    managementReferrals: i.management_referrals || undefined,
+    resolucao68: i.resolucao68 || undefined
   });
 
   const loadCloudIncidents = async () => {
@@ -717,7 +720,10 @@ const App = () => {
           status: item.status,
           source: item.source,
           pdf_url: item.pdfUrl,
-          author_email: item.authorEmail
+          author_email: item.authorEmail,
+          professor_referrals: item.professorReferrals ?? null,
+          management_referrals: item.managementReferrals ?? null,
+          resolucao68: item.resolucao68 ?? null
         });
 
         if (!error) {
@@ -801,7 +807,10 @@ const App = () => {
             status: item.status,
             source: item.source,
             pdf_url: item.pdfUrl,
-            author_email: item.authorEmail
+            author_email: item.authorEmail,
+            professor_referrals: item.professorReferrals ?? null,
+            management_referrals: item.managementReferrals ?? null,
+            resolucao68: item.resolucao68 ?? null
           });
 
           if (error) {
@@ -889,6 +898,9 @@ const App = () => {
           .update({
             status: updated.status,
             management_feedback: updated.managementFeedback,
+            management_feedback_at: updated.managementFeedbackAt ?? null,
+            management_referrals: updated.managementReferrals ?? null,
+            resolucao68: updated.resolucao68 ?? null,
             last_viewed_at: updated.lastViewedAt
           })
           .eq('id', updated.id);
