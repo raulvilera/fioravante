@@ -38,20 +38,21 @@ const AlunoDropdown: React.FC<AlunoDropdownProps> = ({ value, onChange, alunos, 
           >
             Selecione o Aluno...
           </div>
-          <div className="max-h-[336px] overflow-y-auto py-1.5 flex flex-col gap-1.5">
+          {/* Mesmo formato dos botões de alunos da área do professor */}
+          <div className="max-h-[336px] overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
             {alunos.map((s, idx) => (
               <div
                 key={s.ra}
                 onClick={() => { onChange(s.nome); setOpen(false); }}
-                className={`px-5 py-2.5 text-xs font-black uppercase cursor-pointer transition-colors
+                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer
                   ${value === s.nome
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-blue-600 border-blue-400 text-white shadow-md'
                     : idx % 2 === 0
-                      ? 'bg-white text-gray-900 hover:bg-blue-100'
-                      : 'bg-blue-50 text-gray-900 hover:bg-blue-100'
+                      ? 'bg-white border-gray-100 text-black hover:border-blue-200'
+                      : 'bg-blue-50 border-blue-100 text-black hover:border-blue-300'
                   }`}
               >
-                {s.nome}
+                <span className="text-[10px] font-black uppercase truncate">{s.nome}</span>
               </div>
             ))}
           </div>
